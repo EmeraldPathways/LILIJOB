@@ -7,10 +7,11 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   const user = await requireChatGPTUser("/");
   let companies: CompanyListItem[] = [];
+  let loadError: string | null = null;
   try {
     companies = await listCompanies(user.userId);
-  } catch {
-    // A newly published Site may be waiting for its first D1 migration. The workspace can still render and accept setup actions.
+  } catch (error) {
+    loadError = error instanceof Error ? error.message : "Company data could not be loaded. Reload the workspace to retry.";
   }
-  return <AppShell user={{ displayName: user.displayName, email: user.email }} initialCompanies={companies} />;
+  return <AppShell user={{ displayName: user.displayName, email: user.email }} initialCompanies={companies} initialError={loadError} />;
 }

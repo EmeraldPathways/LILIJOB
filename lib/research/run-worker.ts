@@ -5,11 +5,12 @@ import type { CompanyCategory } from "../domain/types";
 import type { DiscoveryLimits, ResearchCompanySeed } from "./types";
 import type { SearchProvider } from "./search-provider";
 import { createRun, enrichCompany, retryWithBackoff } from "./enrichment-service";
+import { companyNameFromSearchTitle } from "./source-policy";
 import { startImportEnrichment } from "../import/auto-enrich";
 import { D1_COMPANY_ID_BATCH_SIZE } from "../import/enrichment-queue";
 
-export const REFRESH_BATCH_SIZE = 4;
-export const DISCOVERY_ENRICHMENT_BATCH_SIZE = 2;
+export const REFRESH_BATCH_SIZE = 1;
+export const DISCOVERY_ENRICHMENT_BATCH_SIZE = 1;
 
 export type RunBatchStatusInput = {
   done: boolean;
@@ -36,7 +37,7 @@ export function runStatusForBatch(input: RunBatchStatusInput): "running" | "comp
 export function discoveryLimits(overrides: Partial<DiscoveryLimits> = {}): DiscoveryLimits {
   return {
     newCompaniesPerCategory: Math.min(Math.max(1, overrides.newCompaniesPerCategory ?? DEFAULT_DISCOVERY_LIMITS.newCompaniesPerCategory), DEFAULT_DISCOVERY_LIMITS.newCompaniesPerCategory),
-    searchesPerCompany: Math.min(Math.max(1, overrides.searchesPerCompany ?? DEFAULT_DISCOVERY_LIMITS.searchesPerCompany), DEFAULT_DISCOVERY_LIMITS.searchesPerCompany),
+    searchesPerCompany: 1,
     existingCompaniesPerRefresh: Math.min(Math.max(1, overrides.existingCompaniesPerRefresh ?? DEFAULT_DISCOVERY_LIMITS.existingCompaniesPerRefresh), DEFAULT_DISCOVERY_LIMITS.existingCompaniesPerRefresh),
   };
 }
@@ -83,7 +84,7 @@ export async function runDiscovery(
         purpose: "category-evidence",
         query: `${category} technology companies County Dublin hiring careers`,
         maxResults: limits.newCompaniesPerCategory,
-      }));
+      }), { retries: 0 });
     } catch (error) {
       await db.update(schema.refreshRuns).set({ status: "failed", error: error instanceof Error ? error.message : "Discovery provider failed.", finishedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }).where(and(eq(schema.refreshRuns.ownerId, ownerId), eq(schema.refreshRuns.id, runId)));
       throw error;
@@ -100,7 +101,8 @@ export async function runDiscovery(
       } catch {
         continue;
       }
-      const name = result.title.split(/[|–—-]/)[0]?.trim() || domain;
+      const name = companyNameFromSearchTitle(result.title);
+      if (!name) continue;
       const identity = normalizeCompanyIdentity({ companyName: name, website: domain });
       if (seen.has(identity.dedupeKey)) continue;
       seen.add(identity.dedupeKey);

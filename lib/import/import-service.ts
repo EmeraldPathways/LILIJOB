@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import { getDb } from "../../db";
 import {
   companyCategories,
@@ -10,6 +11,46 @@ import { normalizeCompanyIdentity, normalizeDublinLocality } from "../domain/nor
 import type { CompanyCategory } from "../domain/types";
 import { buildImportPlan, parseWorkbook } from "./parse-workbook";
 import type { ImportPlan } from "./types";
+
+type CompanyRow = typeof companies.$inferSelect;
+type CompanyLookup = {
+  byName: Map<string, CompanyRow>;
+  byDomain: Map<string, CompanyRow>;
+};
+
+function companyLookup(rows: CompanyRow[]): CompanyLookup {
+  const byName = new Map<string, CompanyRow>();
+  const byDomain = new Map<string, CompanyRow>();
+  for (const row of rows) {
+    byName.set(row.normalizedName, row);
+    if (row.domain) byDomain.set(row.domain, row);
+  }
+  return { byName, byDomain };
+}
+
+function findCompany(identity: ReturnType<typeof normalizeCompanyIdentity>, lookup: CompanyLookup): CompanyRow | undefined {
+  return (identity.domain ? lookup.byDomain.get(identity.domain) : undefined)
+    ?? lookup.byName.get(identity.normalizedName);
+}
+
+function indexCompany(row: CompanyRow, lookup: CompanyLookup, previousDomain?: string | null): void {
+  if (previousDomain && lookup.byDomain.get(previousDomain)?.id === row.id) {
+    lookup.byDomain.delete(previousDomain);
+  }
+  lookup.byName.set(row.normalizedName, row);
+  if (row.domain) lookup.byDomain.set(row.domain, row);
+}
+
+async function runBatches(
+  db: ReturnType<typeof getDb>,
+  statements: BatchItem<"sqlite">[],
+): Promise<void> {
+  const size = 50;
+  for (let offset = 0; offset < statements.length; offset += size) {
+    const batch = statements.slice(offset, offset + size);
+    await db.batch(batch as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  }
+}
 
 export type ImportSummary = {
   importId: string;
@@ -31,6 +72,8 @@ export async function recoverImportCompanyIds(fileKey: string | null, fileName: 
   const plan = buildImportPlan(workbook);
   const db = getDb();
   const companyIds = new Set<string>();
+  const rows = await db.select().from(companies).where(eq(companies.ownerId, ownerId));
+  const lookup = companyLookup(rows);
   for (const row of plan.rows) {
     const identity = normalizeCompanyIdentity({
       companyName: row.companyName,
@@ -38,14 +81,7 @@ export async function recoverImportCompanyIds(fileKey: string | null, fileName: 
       aliases: row.aliases,
       location: row.location,
     });
-    const identityMatch = identity.domain
-      ? or(eq(companies.normalizedName, identity.normalizedName), eq(companies.domain, identity.domain))
-      : eq(companies.normalizedName, identity.normalizedName);
-    const [matched] = await db
-      .select({ id: companies.id })
-      .from(companies)
-      .where(and(eq(companies.ownerId, ownerId), identityMatch))
-      .limit(1);
+    const matched = findCompany(identity, lookup);
     if (matched) companyIds.add(matched.id);
   }
   return [...companyIds];
@@ -114,8 +150,10 @@ export async function importWorkbook(
     });
     importRowCreated = true;
 
-    const storedCompanyIds = new Set<string>();
+    const companyWrites: BatchItem<"sqlite">[] = [];
     const categories = new Set<CompanyCategory>();
+    const initialRows = await db.select().from(companies).where(eq(companies.ownerId, ownerId));
+    const lookup = companyLookup(initialRows);
     for (const row of plan.rows) {
       const identity = normalizeCompanyIdentity({
         companyName: row.companyName,
@@ -124,20 +162,14 @@ export async function importWorkbook(
         location: row.location,
       });
       const locality = normalizeDublinLocality(row.location);
-      const identityMatch = identity.domain
-        ? or(eq(companies.normalizedName, identity.normalizedName), eq(companies.domain, identity.domain))
-        : eq(companies.normalizedName, identity.normalizedName);
-      const [matched] = await db
-        .select()
-        .from(companies)
-        .where(and(eq(companies.ownerId, ownerId), identityMatch))
-        .limit(1);
+      const matched = findCompany(identity, lookup);
 
       if (matched) {
         const existingMetadata = parseMetadata(matched.metadataJson);
         const existingOriginal = existingMetadata.original && typeof existingMetadata.original === "object" ? existingMetadata.original as Record<string, unknown> : {};
-        await db.update(companies).set({
+        const changes = {
           website: row.website ?? matched.website,
+          domain: identity.domain ?? matched.domain,
           aliasesJson: row.aliases.length ? JSON.stringify(row.aliases) : matched.aliasesJson,
           description: row.description ?? matched.description,
           locationText: row.location ?? matched.locationText,
@@ -146,12 +178,12 @@ export async function importWorkbook(
           foundedYear: row.foundedYear ?? matched.foundedYear,
           enrichmentStatus: matched.lastEnrichedAt || matched.enrichmentStatus !== "queued" ? matched.enrichmentStatus : "not-enriched",
           metadataJson: JSON.stringify({ ...existingMetadata, ...row.metadata, ...(row.careersUrl ? { careersUrl: row.careersUrl } : {}), original: { ...existingOriginal, ...row.original } }),
-          updatedAt: now,
-        }).where(and(eq(companies.ownerId, ownerId), eq(companies.id, matched.id)));
+        };
+        companyWrites.push(db.update(companies).set({ ...changes, updatedAt: now }).where(and(eq(companies.ownerId, ownerId), eq(companies.id, matched.id))));
+        const updated = { ...matched, ...changes, updatedAt: now };
+        indexCompany(updated, lookup, matched.domain);
       } else {
-        await db
-          .insert(companies)
-          .values({
+        const newCompany: CompanyRow = {
             id: id("co"),
             ownerId,
             name: identity.name,
@@ -166,36 +198,52 @@ export async function importWorkbook(
             foundedYear: row.foundedYear,
             metadataJson: JSON.stringify({ ...row.metadata, ...(row.careersUrl ? { careersUrl: row.careersUrl } : {}), original: row.original }),
             enrichmentStatus: "not-enriched",
+            lastEnrichedAt: null,
+            nextRefreshAt: null,
             createdAt: now,
             updatedAt: now,
-          })
-          .onConflictDoNothing();
+            headquarters: null,
+        };
+        companyWrites.push(db.insert(companies).values(newCompany).onConflictDoNothing());
+        indexCompany(newCompany, lookup);
       }
-
-      const [existing] = await db
-        .select({ id: companies.id })
-        .from(companies)
-        .where(and(eq(companies.ownerId, ownerId), identityMatch))
-        .limit(1);
-      if (!existing) continue;
-      storedCompanyIds.add(existing.id);
 
       if (row.category) {
         categories.add(row.category);
-        await db
-          .insert(companyCategories)
-          .values({
-            id: id("cat"),
-            ownerId,
-            companyId: existing.id,
-            category: row.category as CompanyCategory,
-            confidence: "medium",
-            createdAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoNothing();
       }
     }
+
+    await runBatches(db, companyWrites);
+    const persistedRows = await db.select().from(companies).where(eq(companies.ownerId, ownerId));
+    const persistedLookup = companyLookup(persistedRows);
+    const storedCompanyIds = new Set<string>();
+    const categoryStatements: BatchItem<"sqlite">[] = [];
+    const categoryKeys = new Set<string>();
+    for (const row of plan.rows) {
+      const identity = normalizeCompanyIdentity({
+        companyName: row.companyName,
+        website: row.website,
+        aliases: row.aliases,
+        location: row.location,
+      });
+      const matched = findCompany(identity, persistedLookup);
+      if (!matched) continue;
+      storedCompanyIds.add(matched.id);
+      if (!row.category) continue;
+      const categoryKey = `${matched.id}:${row.category}`;
+      if (categoryKeys.has(categoryKey)) continue;
+      categoryKeys.add(categoryKey);
+      categoryStatements.push(db.insert(companyCategories).values({
+        id: id("cat"),
+        ownerId,
+        companyId: matched.id,
+        category: row.category,
+        confidence: "medium",
+        createdAt: now,
+        updatedAt: now,
+      }).onConflictDoNothing());
+    }
+    await runBatches(db, categoryStatements);
 
     return {
       importId,

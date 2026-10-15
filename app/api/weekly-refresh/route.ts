@@ -1,16 +1,20 @@
+import { env } from "cloudflare:workers";
 import { userFromRequest, unauthorizedResponse } from "../../../lib/auth/require-user";
-import { getRunConfig, listConfiguredOwners, recordRunUsage } from "../../../lib/jobs/run-config";
+import { getRunConfig, recordRunUsage } from "../../../lib/jobs/run-config";
 import { runWeeklyRefresh } from "../../../lib/jobs/weekly-refresh";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   const user = userFromRequest(request);
-  const serviceAccess = Boolean(request.headers.get("OAI-Sites-Authorization"));
-  if (!user && !serviceAccess) return unauthorizedResponse();
+  if (env.AUTOMATIC_RESEARCH_ENABLED !== "true") {
+    return Response.json({ status: "paused", message: "Automatic research is disabled. Use Research selected or Research all in sector." });
+  }
+  // Public Sites require authenticated owner identity for paid write operations.
+  if (!user) return unauthorizedResponse();
 
   try {
-    const owners = user ? [user.userId] : await listConfiguredOwners();
+    const owners = [user.userId];
     const summaries = [];
     for (const ownerId of owners) {
       const config = await getRunConfig(ownerId);

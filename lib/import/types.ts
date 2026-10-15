@@ -5,6 +5,7 @@ export type ColumnMapping = {
   website?: string;
   aliases?: string;
   category?: string;
+  sector?: string;
   location?: string;
   careersUrl?: string;
   description?: string;

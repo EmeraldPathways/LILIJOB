@@ -5,9 +5,6 @@ export const metadata: Metadata = {
   title: "Dublin Tech Compass",
   description:
     "A private, sourced research workbench for finding technology employers in County Dublin.",
-  other: {
-    "codex-preview": "development",
-  },
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

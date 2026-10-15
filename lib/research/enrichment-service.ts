@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
-import { buildCompanySearchRequests, rankSearchResults } from "./source-policy";
-import { extractClaims } from "./claim-extractor";
+import { and, eq, sql } from "drizzle-orm";
+import { buildCompanySearchRequests, matchesCompany, rankSearchResults } from "./source-policy";
+import { extractClaims, sourceTypeForCompany } from "./claim-extractor";
 import { mergeClaims } from "./claim-merger";
 import type { ExistingClaim, EnrichmentSummary, ResearchCompanySeed, SearchResult } from "./types";
 import type { SearchProvider } from "./search-provider";
@@ -47,6 +47,53 @@ function parseJson(value: string | null | undefined): unknown {
   }
 }
 
+type CanonicalProfile = {
+  website?: string | null;
+  domain?: string | null;
+  description?: string | null;
+  locality?: string | null;
+  locationText?: string | null;
+  employeeBand?: string | null;
+  foundedYear?: number | null;
+  headquarters?: string | null;
+};
+
+function hasCanonicalValue(value: string | number | null | undefined): boolean {
+  return typeof value === "string" ? Boolean(value.trim()) : value !== null && value !== undefined;
+}
+
+export function buildGapOnlyProfilePatch(
+  company: CanonicalProfile,
+  claims: Pick<ExistingClaim, "field" | "value">[],
+): Partial<CanonicalProfile> {
+  const patch: Partial<CanonicalProfile> = {};
+  const firstValue = (field: string): unknown => claims.find((claim) => claim.field === field)?.value;
+  const textFields = ["website", "domain", "description", "locality", "employeeBand", "headquarters"] as const;
+  for (const field of textFields) {
+    const value = firstValue(field);
+    if (!hasCanonicalValue(company[field]) && typeof value === "string" && value.trim()) {
+      patch[field] = value.trim();
+    }
+  }
+  const foundedYear = firstValue("foundedYear");
+  if (!hasCanonicalValue(company.foundedYear) && typeof foundedYear === "number" && Number.isInteger(foundedYear)) {
+    patch.foundedYear = foundedYear;
+  }
+
+  if (!hasCanonicalValue(company.website) && hasCanonicalValue(company.domain)) {
+    const domain = company.domain!.trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
+    if (domain) patch.website = `https://${domain}`;
+  }
+  if (!hasCanonicalValue(company.domain) && hasCanonicalValue(company.website)) {
+    try {
+      patch.domain = new URL(company.website!.startsWith("http") ? company.website! : `https://${company.website}`).hostname.replace(/^www\./, "");
+    } catch {
+      // An invalid imported website is preserved without deriving a domain from it.
+    }
+  }
+  return patch;
+}
+
 export async function enrichCompany(
   ownerId: string,
   companyId: string,
@@ -70,22 +117,31 @@ export async function enrichCompany(
   }
 
   const now = new Date().toISOString();
-  await db.update(schema.refreshRuns).set({ status: "running", startedAt: now, updatedAt: now }).where(and(eq(schema.refreshRuns.ownerId, ownerId), eq(schema.refreshRuns.id, runId)));
-  await db.update(schema.companies).set({ enrichmentStatus: "running", updatedAt: now }).where(and(eq(schema.companies.ownerId, ownerId), eq(schema.companies.id, companyId)));
-
-  const seed: ResearchCompanySeed = { name: company.name, domain: company.domain, location: company.locationText };
-  const requests = buildCompanySearchRequests(seed).slice(0, options.maxSearches ?? 6);
-  const results: SearchResult[] = [];
-  let failures = 0;
-  for (const request of requests) {
-    try {
-      results.push(...(await retryWithBackoff(() => provider.search(request))));
-    } catch {
-      failures += 1;
+  try {
+    await db.update(schema.companies).set({ enrichmentStatus: "running", updatedAt: now }).where(and(eq(schema.companies.ownerId, ownerId), eq(schema.companies.id, companyId)));
+    const seed: ResearchCompanySeed = {
+      name: company.name,
+      domain: company.domain,
+      website: company.website,
+      description: company.description,
+      locality: company.locality,
+      location: company.locationText,
+      headquarters: company.headquarters,
+      employeeBand: company.employeeBand,
+      foundedYear: company.foundedYear,
+    };
+    const requests = buildCompanySearchRequests(seed).slice(0, 1);
+    const results: SearchResult[] = [];
+    let failures = 0;
+    for (const request of requests) {
+      try {
+        results.push(...(await retryWithBackoff(() => provider.search(request), { retries: 0 })));
+      } catch {
+        failures += 1;
+      }
     }
-  }
 
-  const ranked = rankSearchResults(results);
+    const ranked = rankSearchResults(results.filter((result) => matchesCompany(seed, result)));
   const claims = await extractClaims(seed, ranked);
   const existingRows = await db.select().from(schema.companyClaims).where(and(eq(schema.companyClaims.ownerId, ownerId), eq(schema.companyClaims.companyId, companyId), eq(schema.companyClaims.status, "current")));
   const existing: ExistingClaim[] = existingRows.map((row) => ({
@@ -105,14 +161,22 @@ export async function enrichCompany(
   let claimsAdded = 0;
   let jobsFound = 0;
   let contactsFound = 0;
-  const sourceIds = new Map<string, string>();
-  for (const result of ranked) {
-    const normalizedUrl = result.url.toLowerCase().replace(/#.*$/, "").replace(/\/$/, "");
+    const sourceIds = new Map<string, string>();
+    const groupedSources = new Map<string, { result: SearchResult; titles: string[]; snippets: string[] }>();
+    for (const result of ranked) {
+      const normalizedUrl = result.url.toLowerCase().replace(/#.*$/, "").replace(/\/$/, "");
+      const group = groupedSources.get(normalizedUrl) ?? { result, titles: [], snippets: [] };
+      if (result.title.trim() && !group.titles.includes(result.title.trim())) group.titles.push(result.title.trim());
+      if (result.snippet.trim() && !group.snippets.includes(result.snippet.trim())) group.snippets.push(result.snippet.trim());
+      groupedSources.set(normalizedUrl, group);
+    }
+    for (const [normalizedUrl, group] of groupedSources) {
+      const result = group.result;
     await db.insert(schema.sources).values({
-      id: id("src"), ownerId, companyId, url: result.url, normalizedUrl, title: result.title, snippet: result.snippet,
-      provider: result.provider, sourceType: result.sourceType ?? "search", retrievedAt: result.retrievedAt, checkedAt: now,
+      id: id("src"), ownerId, companyId, url: result.url, normalizedUrl, title: group.titles.join(" · "), snippet: group.snippets.join("\n"),
+      provider: result.provider, sourceType: sourceTypeForCompany(seed, result), retrievedAt: result.retrievedAt, checkedAt: now,
       status: result.status ?? "ok", createdAt: now, updatedAt: now,
-    }).onConflictDoUpdate({ target: [schema.sources.ownerId, schema.sources.normalizedUrl], set: { checkedAt: now, snippet: result.snippet, updatedAt: now } });
+    }).onConflictDoUpdate({ target: [schema.sources.ownerId, schema.sources.normalizedUrl], set: { checkedAt: now, title: group.titles.join(" · "), snippet: group.snippets.join("\n"), updatedAt: now } });
     const [sourceRow] = await db.select({ id: schema.sources.id }).from(schema.sources).where(and(eq(schema.sources.ownerId, ownerId), eq(schema.sources.normalizedUrl, normalizedUrl))).limit(1);
     if (sourceRow) sourceIds.set(normalizedUrl, sourceRow.id);
   }
@@ -198,18 +262,28 @@ export async function enrichCompany(
     contactsFound += 1;
   }
 
-  const description = merged.current.find((claim) => claim.field === "description")?.value;
-  const locality = merged.current.find((claim) => claim.field === "locality")?.value;
-  if (typeof description === "string" || typeof locality === "string") {
-    await db.update(schema.companies).set({ description: typeof description === "string" ? description : company.description, locality: typeof locality === "string" ? locality : company.locality, updatedAt: now }).where(and(eq(schema.companies.ownerId, ownerId), eq(schema.companies.id, companyId)));
+  const profilePatch = buildGapOnlyProfilePatch(company, claims);
+  if (Object.keys(profilePatch).length) {
+    const guardedPatch = Object.fromEntries(Object.entries(profilePatch).map(([field, value]) => {
+      const column = schema.companies[field as keyof CanonicalProfile];
+      return [field, sql`CASE WHEN ${column} IS NULL OR trim(CAST(${column} AS TEXT)) = '' THEN ${value} ELSE ${column} END`];
+    }));
+    await db.update(schema.companies).set({ ...guardedPatch, updatedAt: now }).where(and(eq(schema.companies.ownerId, ownerId), eq(schema.companies.id, companyId)));
   }
 
   const status: EnrichmentSummary["status"] = failures === 0 ? "completed" : ranked.length ? "partial" : "failed";
   const error = failures && !ranked.length ? "All research provider requests failed." : undefined;
-  await db.update(schema.refreshRuns).set({ status, processed: requests.length, succeeded: requests.length - failures, failed: failures, finishedAt: now, updatedAt: now, error: error ?? null }).where(and(eq(schema.refreshRuns.ownerId, ownerId), eq(schema.refreshRuns.id, runId)));
   await db.update(schema.companies).set({ enrichmentStatus: status, lastEnrichedAt: now, updatedAt: now }).where(and(eq(schema.companies.ownerId, ownerId), eq(schema.companies.id, companyId)));
 
   return { companyId, runId, sourcesChecked: ranked.length, claimsAdded, jobsFound, contactsFound, permitEvidenceFound: merged.current.filter((claim) => claim.field === "permitEvidence").length, status, error };
+  } catch (error) {
+    try {
+      await db.update(schema.companies).set({ enrichmentStatus: "failed", updatedAt: new Date().toISOString() }).where(and(eq(schema.companies.ownerId, ownerId), eq(schema.companies.id, companyId)));
+    } catch {
+      // Preserve the original failure for the run owner.
+    }
+    throw error;
+  }
 }
 
 export async function createRun(ownerId: string, kind: string, companyId?: string, category?: string): Promise<string> {

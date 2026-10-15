@@ -30,7 +30,13 @@ export type SearchResult = {
 export type ResearchCompanySeed = {
   name: string;
   domain?: string | null;
+  website?: string | null;
+  description?: string | null;
+  locality?: string | null;
   location?: string | null;
+  headquarters?: string | null;
+  employeeBand?: string | null;
+  foundedYear?: number | null;
   category?: CompanyCategory | null;
 };
 

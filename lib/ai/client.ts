@@ -3,6 +3,7 @@ import { env } from "cloudflare:workers";
 export const DEFAULT_AI_MODEL = "gpt-5.6-luna";
 export type OpenAIReasoningEffort = "low" | "medium" | "high";
 export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
+export const DEFAULT_OPENAI_ENRICHMENT_REASONING_EFFORT: OpenAIReasoningEffort = "low";
 
 export class AIConfigurationError extends Error {
   readonly code = "AI_NOT_CONFIGURED";
@@ -25,27 +26,35 @@ export class AIProviderError extends Error {
 }
 
 type ResponsesBody = {
+  status?: unknown;
   output_text?: unknown;
   output?: unknown;
 };
 
-function collectText(value: unknown, output: string[] = []): string[] {
-  if (typeof value === "string") {
-    output.push(value);
-  } else if (Array.isArray(value)) {
-    value.forEach((item) => collectText(item, output));
-  } else if (value && typeof value === "object") {
-    for (const [key, item] of Object.entries(value)) {
-      if (key === "annotations" || key === "type" || key === "id") continue;
-      collectText(item, output);
+export function responseText(body: ResponsesBody): string {
+  if (!Array.isArray(body.output)) return "";
+  const text: string[] = [];
+  for (const item of body.output) {
+    if (!item || typeof item !== "object" || (item as { type?: unknown }).type !== "message") continue;
+    const message = item as { status?: unknown; content?: unknown };
+    if (message.status !== undefined && message.status !== "completed") continue;
+    if (!Array.isArray(message.content)) continue;
+    for (const content of message.content) {
+      if (!content || typeof content !== "object") continue;
+      const block = content as { type?: unknown; text?: unknown };
+      if (block.type === "output_text" && typeof block.text === "string") text.push(block.text);
     }
   }
-  return output;
+  return text.join("\n").trim();
 }
 
-export function responseText(body: ResponsesBody): string {
-  if (typeof body.output_text === "string" && body.output_text.trim()) return body.output_text.trim();
-  return collectText(body.output).join(" ").trim();
+function isIncompleteResponse(body: ResponsesBody): boolean {
+  if (body.status !== undefined && body.status !== "completed") return true;
+  if (!Array.isArray(body.output)) return false;
+  return body.output.some((item) => item && typeof item === "object"
+    && (item as { type?: unknown; status?: unknown }).type === "message"
+    && (item as { status?: unknown }).status !== undefined
+    && (item as { status?: unknown }).status !== "completed");
 }
 
 export function configuredModel(): string {
@@ -57,6 +66,13 @@ export function configuredReasoningEffort(): OpenAIReasoningEffort {
   return configured === "low" || configured === "medium" || configured === "high"
     ? configured
     : DEFAULT_OPENAI_REASONING_EFFORT;
+}
+
+export function configuredEnrichmentReasoningEffort(): OpenAIReasoningEffort {
+  const configured = env.OPENAI_ENRICHMENT_REASONING_EFFORT?.trim().toLowerCase();
+  return configured === "low" || configured === "medium" || configured === "high"
+    ? configured
+    : DEFAULT_OPENAI_ENRICHMENT_REASONING_EFFORT;
 }
 
 export function isAIConfigured(): boolean {
@@ -86,6 +102,7 @@ export async function askOpenAI(input: string, options: { model?: string; fetchI
   if (response.status === 429) throw new AIProviderError("OpenAI rate limit reached. Try again shortly.", true);
   if (!response.ok) throw new AIProviderError(`OpenAI returned HTTP ${response.status}.`, response.status >= 500);
   const raw = await response.json() as ResponsesBody;
+  if (isIncompleteResponse(raw)) throw new AIProviderError("OpenAI returned an incomplete answer.");
   const text = responseText(raw);
   if (!text) throw new AIProviderError("OpenAI returned an empty answer.");
   return { text, raw };

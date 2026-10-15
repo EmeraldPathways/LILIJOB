@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { discoveryLimits, planRefreshBatch, runStatusForBatch, uniqueDiscoveryCompanyIds } from "../../lib/research/run-worker";
+import { DISCOVERY_ENRICHMENT_BATCH_SIZE, REFRESH_BATCH_SIZE, discoveryLimits, planRefreshBatch, runStatusForBatch, uniqueDiscoveryCompanyIds } from "../../lib/research/run-worker";
 
 describe("run guardrails", () => {
   it("uses the agreed weekly defaults and caps oversized requests", () => {
     expect(discoveryLimits()).toEqual({
       newCompaniesPerCategory: 25,
-      searchesPerCompany: 6,
+      searchesPerCompany: 1,
       existingCompaniesPerRefresh: 500,
     });
     expect(discoveryLimits({ newCompaniesPerCategory: 500, searchesPerCompany: 20, existingCompaniesPerRefresh: 1000 })).toEqual({
       newCompaniesPerCategory: 25,
-      searchesPerCompany: 6,
+      searchesPerCompany: 1,
       existingCompaniesPerRefresh: 500,
     });
+  });
+
+  it("defaults routine processing to one company per request", () => {
+    expect(REFRESH_BATCH_SIZE).toBe(1);
+    expect(DISCOVERY_ENRICHMENT_BATCH_SIZE).toBe(1);
   });
 
   it("returns real, unique company ids for discovery enrichment", () => {

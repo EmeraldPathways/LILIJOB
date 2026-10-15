@@ -1,0 +1,322 @@
+.company-sheet {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  color: #1e293b;
+}
+
+.company-sheet-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(130px, 190px) minmax(130px, 190px) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 2px 1px;
+}
+
+.company-sheet-search,
+.company-sheet-filter {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.company-sheet-control-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-sheet-search input,
+.company-sheet-filter select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid #dbe2ea;
+  border-radius: 8px;
+  outline: none;
+  background: #fff;
+  color: #334155;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.company-sheet-search input:focus,
+.company-sheet-filter select:focus,
+.company-sheet-cell-input:focus {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px #dbeafe;
+}
+
+.company-sheet-filter select:disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+}
+
+.company-sheet-count {
+  margin: 0 2px 9px 5px;
+  color: #64748b;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.company-sheet-scroll {
+  position: relative;
+  min-width: 0;
+  max-height: min(72vh, 760px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+  background: #fff;
+  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-width: thin;
+}
+
+.company-sheet-scroll:focus-visible {
+  outline: 3px solid #bfdbfe;
+  outline-offset: 2px;
+}
+
+.company-sheet-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: #334155;
+  font-size: 12px;
+}
+
+.company-sheet-table th,
+.company-sheet-table td {
+  min-width: 155px;
+  max-width: 300px;
+  border-bottom: 1px solid #edf1f5;
+  border-right: 1px solid #f1f5f9;
+  background: #fff;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.company-sheet-table thead th {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  background: #f8fafc;
+  color: #475569;
+  box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.company-sheet-table tbody tr:hover td {
+  background: #fbfdff;
+}
+
+.company-sheet-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.company-sheet-select-column {
+  position: sticky;
+  z-index: 3;
+  left: 0;
+  width: 42px;
+  min-width: 42px !important;
+  max-width: 42px !important;
+  text-align: center !important;
+}
+
+.company-sheet-table thead .company-sheet-select-column {
+  z-index: 5;
+}
+
+.company-sheet-select-column input {
+  width: 15px;
+  height: 15px;
+  margin: 3px 0 0;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.company-sheet-heading {
+  display: flex;
+  min-height: 39px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 5px 7px;
+}
+
+.company-sheet-sort,
+.company-sheet-edit-label,
+.company-sheet-detail-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.company-sheet-sort {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.company-sheet-sort:hover,
+.company-sheet-edit-label:hover {
+  color: #1d4ed8;
+}
+
+.company-sheet-sort-indicator {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.company-sheet-origin-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.company-sheet-cell-input {
+  display: block;
+  width: 100%;
+  min-width: 120px;
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  outline: none;
+  background: transparent;
+  color: #334155;
+  padding: 6px 7px;
+  font-size: 12px;
+}
+
+.company-sheet-cell-input:hover {
+  border-color: #e2e8f0;
+  background: #fff;
+}
+
+.company-sheet-cell-input:disabled {
+  cursor: wait;
+  opacity: .6;
+}
+
+.company-sheet-table td[data-origin="profile"] .company-sheet-cell-input {
+  border-style: dashed;
+  border-color: #dbeafe;
+  background: #f8fbff;
+}
+
+.company-sheet-cell-error,
+.company-sheet-saving {
+  display: block;
+  margin: 4px 4px 0;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.company-sheet-cell-error {
+  color: #b91c1c;
+}
+
+.company-sheet-saving {
+  color: #2563eb;
+}
+
+.company-sheet-actions-column {
+  position: sticky;
+  z-index: 3;
+  right: 0;
+  min-width: 105px !important;
+  max-width: 105px !important;
+  border-left: 1px solid #e2e8f0 !important;
+  background: #fff !important;
+  box-shadow: -5px 0 8px rgb(15 23 42 / 3%);
+}
+
+.company-sheet-table thead .company-sheet-actions-column {
+  z-index: 5;
+  background: #f8fafc !important;
+}
+
+.company-sheet-detail-button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  border: 1px solid #dbeafe;
+  border-radius: 7px;
+  background: #f8fbff;
+  color: #1d4ed8;
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.company-sheet-detail-button:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.company-sheet-sort:focus-visible,
+.company-sheet-detail-button:focus-visible,
+.company-sheet-select-column input:focus-visible {
+  outline: 3px solid #bfdbfe;
+  outline-offset: 2px;
+}
+
+.company-sheet-empty {
+  min-width: 220px !important;
+  padding: 30px 16px !important;
+  color: #64748b;
+  text-align: center !important;
+}
+
+@media (max-width: 700px) {
+  .company-sheet-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+  }
+
+  .company-sheet-search {
+    grid-column: 1 / -1;
+  }
+
+  .company-sheet-count {
+    grid-column: 1 / -1;
+    margin: 0 2px 0;
+  }
+
+  .company-sheet-scroll {
+    max-height: 68vh;
+    border-radius: 9px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .company-sheet-table th,
+  .company-sheet-table td {
+    min-width: 145px;
+    padding: 7px;
+  }
+
+  .company-sheet-select-column {
+    min-width: 40px !important;
+    max-width: 40px !important;
+  }
+}

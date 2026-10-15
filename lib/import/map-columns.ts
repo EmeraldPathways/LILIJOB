@@ -15,6 +15,7 @@ type MappedField =
   | "website"
   | "aliases"
   | "category"
+  | "sector"
   | "location"
   | "careersUrl"
   | "description"
@@ -32,7 +33,8 @@ const aliases: Record<MappedField, string[]> = {
   ],
   website: ["website", "website url", "url", "domain", "homepage", "company website"],
   aliases: ["alias", "aliases", "also known as", "aka"],
-  category: ["category", "sector", "industry", "company type", "type"],
+  category: ["category", "industry", "company type", "type"],
+  sector: ["sector"],
   location: [
     "location",
     "hq location",
@@ -47,15 +49,15 @@ const aliases: Record<MappedField, string[]> = {
   foundedYear: ["founded", "founded year", "year founded"],
 };
 
-const recognizedHeaders = new Set(Object.values(aliases).flat());
-
 export function isLikelyHeaderRow(headers: string[]): boolean {
   const normalized = headers.map(normalizeHeader).filter(Boolean);
-  const recognized = new Set(normalized.filter((header) => recognizedHeaders.has(header)));
-  return recognized.has("company") || recognized.has("company name") || recognized.has("employer") || recognized.has("organization") || recognized.has("organisation") || recognized.has("business") || (recognized.has("website") && recognized.size >= 2);
+  return normalized.some((header) => aliases.companyName.includes(header));
 }
 
-export function mapWorkbookColumns(headers: string[]): ColumnMapping {
+export function mapWorkbookColumns(
+  headers: string[],
+  options: { allowFirstColumnFallback?: boolean } = {},
+): ColumnMapping {
   const mapping: ColumnMapping = { unknown: [] };
   const claimed = new Set<string>();
 
@@ -82,7 +84,7 @@ export function mapWorkbookColumns(headers: string[]): ColumnMapping {
     }
   }
 
-  if (!mapping.companyName && headers[0]) {
+  if (!mapping.companyName && options.allowFirstColumnFallback !== false && headers[0]) {
     mapping.companyName = headers[0];
     mapping.unknown = mapping.unknown.filter((header) => header !== headers[0]);
   }

@@ -11,6 +11,7 @@ import {
   sources,
 } from "../../db/schema";
 import type { CompanyCategory, ConfidenceLevel, DublinLocality } from "../domain/types";
+import { buildCompanyCellUpdatePlan, type CompanyCellSnapshot } from "../sheet-data/cell-update";
 import { groupRowsByCompanyId } from "./company-relations";
 
 export type CompanyFilters = {
@@ -27,6 +28,8 @@ export type CompanyFilters = {
 export type CompanyListItem = {
   id: string;
   name: string;
+  sector?: string | null;
+  importedData?: Record<string, string>;
   domain: string | null;
   website: string | null;
   locality: DublinLocality | null;
@@ -62,6 +65,30 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
     return JSON.parse(value) as T;
   } catch {
     return fallback;
+  }
+}
+
+export function companySheetFields(metadataJson: string | null): {
+  sector: string | null;
+  importedData: Record<string, string>;
+} {
+  const metadata = parseJson<Record<string, unknown>>(metadataJson, {});
+  const original = metadata.original;
+  const importedData = original && typeof original === "object" && !Array.isArray(original)
+    ? Object.fromEntries(
+        Object.entries(original).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      )
+    : {};
+  return {
+    sector: typeof metadata.sector === "string" && metadata.sector.trim() ? metadata.sector : null,
+    importedData,
+  };
+}
+
+export class CompanyCellConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CompanyCellConflictError";
   }
 }
 
@@ -158,6 +185,7 @@ export async function listCompanies(
     result.push({
       id: row.id,
       name: row.name,
+      ...companySheetFields(row.metadataJson),
       domain: row.domain,
       website: row.website,
       locality: row.locality as DublinLocality | null,
@@ -200,6 +228,7 @@ export async function getCompanyDetail(ownerId: string, companyId: string): Prom
   return {
     id: row.id,
     name: row.name,
+    ...companySheetFields(row.metadataJson),
     domain: row.domain,
     website: row.website,
     locality: row.locality as DublinLocality | null,
@@ -225,6 +254,85 @@ export async function getCompanyDetail(ownerId: string, companyId: string): Prom
     claims: claimRows,
     history: historyRows,
   };
+}
+
+export async function updateCompanyCells(
+  ownerId: string,
+  companyId: string,
+  cells: Record<string, string>,
+): Promise<CompanyDetail | null> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(companies)
+    .where(and(eq(companies.ownerId, ownerId), eq(companies.id, companyId)))
+    .limit(1);
+  if (!row) return null;
+
+  const snapshot: CompanyCellSnapshot = {
+    name: row.name,
+    normalizedName: row.normalizedName,
+    domain: row.domain,
+    website: row.website,
+    aliasesJson: row.aliasesJson,
+    description: row.description,
+    locality: row.locality,
+    locationText: row.locationText,
+    employeeBand: row.employeeBand,
+    foundedYear: row.foundedYear,
+    metadataJson: row.metadataJson,
+  };
+  const plan = buildCompanyCellUpdatePlan(snapshot, cells);
+
+  if (plan.updates.normalizedName || (plan.updates.domain && plan.updates.domain !== row.domain)) {
+    const peers = await db
+      .select({ id: companies.id, normalizedName: companies.normalizedName, domain: companies.domain })
+      .from(companies)
+      .where(eq(companies.ownerId, ownerId));
+    const conflict = peers.find((peer) =>
+      peer.id !== companyId && (
+        (plan.updates.normalizedName !== undefined && peer.normalizedName === plan.updates.normalizedName) ||
+        (plan.updates.domain !== undefined && plan.updates.domain !== null && peer.domain === plan.updates.domain)
+      ),
+    );
+    if (conflict) {
+      throw new CompanyCellConflictError("Another company already uses that name or website. Choose a unique value or edit the existing company.");
+    }
+  }
+
+  const now = new Date().toISOString();
+  const changed = await db
+    .update(companies)
+    .set({ ...plan.updates, updatedAt: now })
+    .where(and(
+      eq(companies.ownerId, ownerId),
+      eq(companies.id, companyId),
+      eq(companies.metadataJson, row.metadataJson),
+      eq(companies.updatedAt, row.updatedAt),
+    ))
+    .returning({ id: companies.id });
+  if (!changed.length) {
+    throw new CompanyCellConflictError("This company changed in another tab. Refresh the sheet and retry your edit.");
+  }
+
+  if (plan.updateCategories) {
+    await db
+      .delete(companyCategories)
+      .where(and(eq(companyCategories.ownerId, ownerId), eq(companyCategories.companyId, companyId)));
+    if (plan.category) {
+      await db.insert(companyCategories).values({
+        id: `cat_${crypto.randomUUID()}`,
+        ownerId,
+        companyId,
+        category: plan.category,
+        confidence: "medium",
+        createdAt: now,
+        updatedAt: now,
+      }).onConflictDoNothing();
+    }
+  }
+
+  return getCompanyDetail(ownerId, companyId);
 }
 
 export async function deleteCompany(ownerId: string, companyId: string): Promise<boolean> {

@@ -21,7 +21,7 @@ export class TavilySearchProvider implements SearchProvider {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ api_key: apiKey, query: request.query, search_depth: "advanced", max_results: request.maxResults ?? 5, include_answer: false }),
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(20_000),
       });
     } catch (error) {
       throw new ResearchProviderError(error instanceof Error ? error.message : "Tavily request timed out", "timeout", true);
@@ -34,9 +34,9 @@ export class TavilySearchProvider implements SearchProvider {
     return body.results.flatMap((item) => {
       const url = typeof item.url === "string" ? item.url : "";
       if (!url) return [];
-      const title = typeof item.title === "string" ? item.title : request.query;
+      const title = typeof item.title === "string" ? item.title : "";
       const content = typeof item.content === "string" ? item.content : "";
-      return [{ url, title, snippet: content.slice(0, 800), content, provider: this.name, retrievedAt: new Date().toISOString(), sourceType: classifySource(url, title), hasFullContent: Boolean(content), status: "ok" as const }];
+      return [{ url, title, snippet: content.slice(0, 800), content, provider: this.name, retrievedAt: new Date().toISOString(), sourceType: classifySource(url, title), hasFullContent: false, status: "ok" as const }];
     });
   }
 }

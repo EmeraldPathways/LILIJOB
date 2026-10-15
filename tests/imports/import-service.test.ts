@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as XLSX from "xlsx";
 import {
   buildImportPlan,
   parseWorkbook,
@@ -94,5 +95,47 @@ describe("workbook import planning", () => {
       "Map source URL": "https://source.example/map",
     });
     expect(plan.errors).toEqual([]);
+  });
+
+  it("imports arbitrary sector values from a real XLSX and preserves every source column", async () => {
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ["Company"],
+      ["Quarterly company export"],
+      ["Company Name", "Category", "Sector", "", "Internal owner"],
+      ["Northwind Energy", "fintech", "Clean energy", "unheaded value", "Alex"],
+      ["Harbor Systems", "startups", "Maritime software", "another value", ""],
+    ]);
+    XLSX.utils.book_append_sheet(workbook, sheet, "Companies");
+    const bytes = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    const plan = buildImportPlan(await parseWorkbook(bytes, "sector-export.xlsx"));
+
+    expect(plan.rows).toHaveLength(2);
+    expect(plan.rows[0]).toMatchObject({
+      companyName: "Northwind Energy",
+      category: "fintech",
+      metadata: {
+        sector: "Clean energy",
+        "Internal owner": "Alex",
+      },
+      original: {
+        "Company Name": "Northwind Energy",
+        Category: "fintech",
+        Sector: "Clean energy",
+        "Column 4": "unheaded value",
+        "Internal owner": "Alex",
+      },
+    });
+    expect(plan.rows[1]?.metadata.sector).toBe("Maritime software");
+    expect(plan.rows[1]?.original["Internal owner"]).toBe("");
+  });
+
+  it("fails with an actionable message when a workbook has no usable header", async () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([]), "Empty");
+    const bytes = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    await expect(parseWorkbook(bytes, "empty.xlsx")).rejects.toThrow(/header/i);
   });
 });

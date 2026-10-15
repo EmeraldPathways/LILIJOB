@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { RefreshCw } from "lucide-react";
 import type { CompanyDetail as CompanyDetailRecord } from "../../lib/repositories/company-repository";
@@ -11,6 +11,8 @@ export function CompanyProfileClient({ companyId }: { companyId: string }) {
   const [company, setCompany] = useState<CompanyDetailRecord | null>(null);
   const [tab, setTab] = useState<CompanyTab>("overview");
   const [loading, setLoading] = useState(true);
+  const [enriching, setEnriching] = useState(false);
+  const enrichBusy = useRef(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -31,6 +33,8 @@ export function CompanyProfileClient({ companyId }: { companyId: string }) {
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
 
   async function enrich() {
+    if (enrichBusy.current) return;
+    enrichBusy.current = true; setEnriching(true);
     setMessage("Enriching this company with fresh sourced evidence…");
     try {
       const response = await fetch("/api/enrichment", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyId }) });
@@ -40,8 +44,8 @@ export function CompanyProfileClient({ companyId }: { companyId: string }) {
       setMessage("Company enrichment completed.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Enrichment could not start.");
-    }
+    } finally { enrichBusy.current = false; setEnriching(false); }
   }
 
-  return <main className="standalone-page"><div className="standalone-header"><Link className="text-xs font-semibold text-blue-600 hover:underline" href="/">← Back to workspace</Link><p className="eyebrow mt-6">Full company profile</p><h1 className="workspace-title">Research record</h1><p className="workspace-description">Inspect the same sourced profile in a focused view that works well on a phone.</p></div>{message && <div className="status-banner" role="status"><span>{message}</span></div>}{loading && !company ? <div className="standalone-card" role="status"><RefreshCw size={16} className="animate-spin" /> Loading company profile…</div> : company ? <div className="standalone-card profile-route-card"><CompanyDetail company={company} activeTab={tab} onTabChange={setTab} onEnrich={() => void enrich()} /></div> : <div className="standalone-card empty-state"><p className="font-medium text-slate-800">Company not found</p><p className="mt-1 text-sm text-slate-500">This private record may have been removed or belongs to another account.</p></div>}</main>;
+  return <main className="standalone-page"><div className="standalone-header"><Link className="text-xs font-semibold text-blue-600 hover:underline" href="/">← Back to workspace</Link><p className="eyebrow mt-6">Full company profile</p><h1 className="workspace-title">Research record</h1><p className="workspace-description">Inspect the same sourced profile in a focused view that works well on a phone.</p></div>{message && <div className="status-banner" role="status"><span>{message}</span></div>}{loading && !company ? <div className="standalone-card" role="status"><RefreshCw size={16} className="animate-spin" /> Loading company profile…</div> : company ? <div className="standalone-card profile-route-card"><CompanyDetail company={company} activeTab={tab} onTabChange={setTab} onEnrich={() => void enrich()} enriching={enriching} /></div> : <div className="standalone-card empty-state"><p className="font-medium text-slate-800">Company not found</p><p className="mt-1 text-sm text-slate-500">This private record may have been removed or belongs to another account.</p></div>}</main>;
 }

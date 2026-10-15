@@ -3,6 +3,7 @@ import { getDb } from "../../../db";
 import { imports } from "../../../db/schema";
 import { userFromRequest, unauthorizedResponse } from "../../../lib/auth/require-user";
 import { importWorkbook } from "../../../lib/import/import-service";
+import { WorkbookParseError } from "../../../lib/import/parse-workbook";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,9 @@ export async function POST(request: Request) {
     const summary = await importWorkbook(await value.arrayBuffer(), value.name, user.userId);
     return Response.json({ summary }, { status: 201 });
   } catch (error) {
+    if (error instanceof WorkbookParseError) {
+      return Response.json({ error: { code: "INVALID_WORKBOOK", message: error.message } }, { status: 400 });
+    }
     return Response.json({ error: { code: "IMPORT_FAILED", message: error instanceof Error ? error.message : "Unable to import file." } }, { status: 500 });
   }
 }

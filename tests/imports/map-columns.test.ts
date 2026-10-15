@@ -15,7 +15,7 @@ describe("workbook column mapping", () => {
 
     expect(mapping.companyName).toBe("Company Name");
     expect(mapping.website).toBe("Website URL");
-    expect(mapping.category).toBe("Sector");
+    expect(mapping.sector).toBe("Sector");
     expect(mapping.location).toBe("HQ / Location");
     expect(mapping.careersUrl).toBe("Careers");
     expect(mapping.unknown).toEqual(["Irish permit notes", "Internal owner"]);
@@ -30,5 +30,12 @@ describe("workbook column mapping", () => {
     const mapping = mapWorkbookColumns(["Employer", "Notes"]);
     expect(mapping.companyName).toBe("Employer");
     expect(mapping.unknown).toEqual(["Notes"]);
+  });
+
+  it("keeps an explicit category mapping when a separate sector column exists", () => {
+    const mapping = mapWorkbookColumns(["Company Name", "Category", "Sector"]);
+
+    expect(mapping.category).toBe("Category");
+    expect(mapping.sector).toBe("Sector");
   });
 });

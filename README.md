@@ -1,3 +1,17 @@
+# Dublin Tech Compass — version2
+
+Excel is the primary source of company data. Upload a CSV or XLSX containing a company-name column and a `Sector` column. Sector values can be any label; all original columns and blank values are retained. If both Category and Sector exist, Sector drives workspace navigation.
+
+- **Sheet view:** search every field, sort columns, filter, select rows and edit cells. Enter or leaving a cell saves it; Escape cancels a draft. Conflicting edits return a visible error.
+- **Detailed view:** combines the current company profile, every source spreadsheet field and sourced research. Enrichment fills empty fields and preserves existing nonempty values.
+- **Research selected:** acts only on the selected existing records. **Research all in sector:** snapshots every company in the current sector regardless of sheet filters. Choose a sector first.
+- Research advances one company per request. Progress is persisted, and stopping or leaving the page does not lose the queue. Resume from the workspace or Research history.
+- Importing, editing and viewing records never calls a research provider. Automatic scheduled research is disabled.
+- GPT-5.6 Luna uses `OPENAI_ENRICHMENT_REASONING_EFFORT=low` for enrichment and `OPENAI_REASONING_EFFORT=medium` for the assistant. Routine enrichment uses one combined request with a maximum of one built-in web-search call per company attempt, no automatic retry and a bounded timeout.
+- The Site audience is public; data APIs and mutations remain authenticated and owner scoped. Runtime keys are configured through Sites, not committed to source.
+
+The sections below document the underlying Sites starter and development tooling.
+
 # vinext-starter
 
 A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.

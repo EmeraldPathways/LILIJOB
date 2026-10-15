@@ -1,12 +1,15 @@
 import { userFromRequest, unauthorizedResponse } from "../../../lib/auth/require-user";
 import { listCompanies } from "../../../lib/repositories/company-repository";
+import { sectorCompanies } from "../../../lib/workbench/sector-workspace";
 import * as XLSX from "xlsx";
 
 export const dynamic = "force-dynamic";
 
 function csvCell(value: unknown): string {
-  const text = Array.isArray(value) ? value.join(", ") : String(value ?? "");
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  const raw = Array.isArray(value) ? value.join(", ") : String(value ?? "");
+  const numeric = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw.trim());
+  const text = !numeric && /^[\s]*[=+@-]/.test(raw) ? `'${raw}` : raw;
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 export async function GET(request: Request) {
@@ -19,7 +22,11 @@ export async function GET(request: Request) {
   } catch (error) {
     return Response.json({ error: { code: "EXPORT_FAILED", message: error instanceof Error ? error.message : "Unable to prepare export." } }, { status: 500 });
   }
-  const records = companies.map((company) => ({
+  const sector = new URL(request.url).searchParams.get("sector") ?? "All sectors";
+  const records = sectorCompanies(companies, sector).map((company) => ({
+    "Profile company": company.name,
+    "Profile website": company.website,
+    "Profile sector": company.sector,
     Company: company.name,
     Website: company.website,
     Locality: company.locality,
@@ -30,6 +37,7 @@ export async function GET(request: Request) {
     Freshness: company.freshness,
     "Enrichment status": company.enrichmentStatus,
     Description: company.description,
+    ...company.importedData,
   }));
   if (format === "xlsx") {
     const workbook = XLSX.utils.book_new();
@@ -44,9 +52,10 @@ export async function GET(request: Request) {
       },
     });
   }
+  const headers = records.length ? [...new Set(records.flatMap(record=>Object.keys(record)))] : ["Company", "Website", "Sector"];
   const lines = [
-    Object.keys(records[0] ?? { Company: "", Website: "", Locality: "", Categories: "", "Permit signal": "", "Open roles": "", Confidence: "", Freshness: "", "Enrichment status": "", Description: "" }).map(csvCell).join(","),
-    ...records.map((record) => Object.values(record).map(csvCell).join(",")),
+    headers.map(csvCell).join(","),
+    ...records.map(record=>headers.map(header=>csvCell((record as Record<string,unknown>)[header])).join(",")),
   ];
   return new Response(lines.join("\n"), {
     headers: {
