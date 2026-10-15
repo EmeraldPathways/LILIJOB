@@ -22,6 +22,20 @@
       "when": 1792074233521,
       "tag": "0002_majestic_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792090592636,
+      "tag": "0003_burly_nick_fury",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792092065220,
+      "tag": "0004_jazzy_warstar",
+      "breakpoints": true
     }
   ]
 }

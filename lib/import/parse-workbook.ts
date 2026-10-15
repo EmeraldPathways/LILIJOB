@@ -20,6 +20,10 @@ export class WorkbookParseError extends Error {
   }
 }
 
+const MAX_WORKBOOK_SHEETS = 20;
+const MAX_WORKBOOK_COLUMNS = 200;
+const MAX_WORKBOOK_ROWS = 25_000;
+
 function uniqueHeaders(values: unknown[], firstColumn: number): string[] {
   const used = new Set<string>();
   return values.map((value, index) => {
@@ -45,11 +49,14 @@ export async function parseWorkbook(
   const rows: Record<string, string>[] = [];
   const rowSheetNames: string[] = [];
   const rowNumbers: number[] = [];
+  if (workbook.SheetNames.length > MAX_WORKBOOK_SHEETS) throw new WorkbookParseError(`A workbook may contain at most ${MAX_WORKBOOK_SHEETS} worksheets.`);
   const multiple = workbook.SheetNames.length > 1;
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
     if (!sheet["!ref"]) continue;
     const range = XLSX.utils.decode_range(sheet["!ref"]!);
+    if (range.e.c - range.s.c + 1 > MAX_WORKBOOK_COLUMNS) throw new WorkbookParseError(`A worksheet may contain at most ${MAX_WORKBOOK_COLUMNS} columns.`);
+    if (range.e.r - range.s.r + 1 > MAX_WORKBOOK_ROWS || rows.length >= MAX_WORKBOOK_ROWS || rows.length + range.e.r - range.s.r + 1 > MAX_WORKBOOK_ROWS) throw new WorkbookParseError(`A workbook may contain at most ${MAX_WORKBOOK_ROWS} data rows.`);
     const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: false, blankrows: true, range });
     const normalizedMatrix = matrix.map(values => Array.from({ length: range.e.c - range.s.c + 1 }, (_, index) => asText(values[index])));
     let headerIndex = -1;

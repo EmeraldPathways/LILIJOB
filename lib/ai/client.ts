@@ -79,7 +79,7 @@ export function isAIConfigured(): boolean {
   return Boolean(env.OPENAI_API_KEY?.trim());
 }
 
-export async function askOpenAI(input: string, options: { model?: string; fetchImpl?: typeof fetch } = {}): Promise<{ text: string; raw: ResponsesBody }> {
+export async function askOpenAI(input: string, options: { model?: string; reasoningEffort?: OpenAIReasoningEffort; maxOutputTokens?: number; fetchImpl?: typeof fetch } = {}): Promise<{ text: string; raw: ResponsesBody }> {
   const apiKey = env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new AIConfigurationError();
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -91,8 +91,8 @@ export async function askOpenAI(input: string, options: { model?: string; fetchI
       body: JSON.stringify({
         model: options.model ?? configuredModel(),
         input,
-        reasoning: { effort: configuredReasoningEffort() },
-        max_output_tokens: 1800,
+        reasoning: { effort: options.reasoningEffort ?? configuredReasoningEffort() },
+        max_output_tokens: options.maxOutputTokens ?? 1800,
       }),
       signal: AbortSignal.timeout(45_000),
     });

@@ -34,6 +34,14 @@ describe("OpenAI request cost controls", () => {
     expect(JSON.parse(String(request?.body))).toMatchObject({ reasoning: { effort: "medium" } });
   });
 
+  it("allows evidence-constrained callers to request lower reasoning and output limits", async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => new Response(JSON.stringify(completedResponse("Answer")), { status: 200 }));
+    await askOpenAI("test request", { fetchImpl, reasoningEffort: "low", maxOutputTokens: 800 });
+
+    const request = vi.mocked(fetchImpl).mock.calls[0]?.[1];
+    expect(JSON.parse(String(request?.body))).toMatchObject({ reasoning: { effort: "low" }, max_output_tokens: 800 });
+  });
+
   it("keeps enrichment reasoning independently configured to low", () => {
     mockEnv.OPENAI_REASONING_EFFORT = "high";
     expect(configuredReasoningEffort()).toBe("high");

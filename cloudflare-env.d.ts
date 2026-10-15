@@ -13,6 +13,9 @@ declare namespace Cloudflare {
     AUTOMATIC_RESEARCH_ENABLED?: string;
     SEARCH_PROVIDER?: string;
     TAVILY_API_KEY?: string;
+    V4_MIGRATION_TOKEN?: string;
+    V4_MIGRATION_OWNER_ID?: string;
+    V4_PERMIT_RULE_ADMIN_ID?: string;
     GOOGLE_CLIENT_ID?: string;
     GOOGLE_CLIENT_SECRET?: string;
     GOOGLE_REDIRECT_URI?: string;

@@ -6,18 +6,29 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import {
   Building2,
+  BarChart3,
+  Bot,
+  ClipboardList,
   Compass,
+  Gauge,
   History,
+  KanbanSquare,
   ShoppingCart,
   Rocket,
+  Radar,
   ShieldCheck,
   Landmark,
+  FileCheck2,
   LogOut,
   Mail,
   Menu,
+  MessageSquareText,
   Settings2,
   Sparkles,
   Upload,
+  UserRound,
+  UsersRound,
+  Workflow,
   X,
 } from "lucide-react";
 import { SIDEBAR_SECTORS } from "../../lib/workbench/sector-workspace";
@@ -32,9 +43,16 @@ const navigationGroups = [
   {
     label: "Workspace",
     links: [
+      { label: "Today", href: "/dashboard", icon: Gauge },
       { label: "Companies", href: "/", icon: Building2 },
-      { label: "Email", href: "/email", icon: Mail },
-      { label: "AI assistant", href: "/ai", icon: Sparkles },
+      { label: "Opportunities", href: "/opportunities", icon: Sparkles },
+      { label: "Job Radar", href: "/job-radar", icon: Radar },
+      { label: "Applications", href: "/applications", icon: KanbanSquare },
+      { label: "Sector Pitches", href: "/pitches", icon: MessageSquareText },
+      { label: "AI assistant", href: "/ai", icon: MessageSquareText },
+      { label: "Outreach & Email", href: "/email", icon: Mail },
+      { label: "Interviews", href: "/interviews", icon: ClipboardList },
+      { label: "AI Job Hunt Agent", href: "/agent", icon: Bot },
     ],
   },
   {
@@ -42,8 +60,18 @@ const navigationGroups = [
     links: SIDEBAR_SECTORS.map((sector,index)=>({label:sector.label,href:`/sectors/${sector.slug}`,icon:[ShoppingCart,Rocket,ShieldCheck,Landmark][index]})),
   },
   {
+    label: "Intelligence",
+    links: [
+      { label: "Hiring Signals", href: "/signals", icon: Workflow },
+      { label: "Recruitment Contacts", href: "/contacts", icon: UsersRound },
+      { label: "Permit reality", href: "/permit", icon: FileCheck2 },
+      { label: "Analytics", href: "/analytics", icon: BarChart3 },
+    ],
+  },
+  {
     label: "Manage",
     links: [
+      { label: "Candidate Profile & CVs", href: "/candidate", icon: UserRound },
       { label: "Imports", href: "/imports", icon: Upload },
       { label: "Research history", href: "/history", icon: History },
       { label: "Settings", href: "/settings", icon: Settings2 },

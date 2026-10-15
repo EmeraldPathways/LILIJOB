@@ -33,4 +33,22 @@ describe("import upload API", () => {
       },
     });
   });
+
+  it("rejects oversized uploads before parsing or persistence", async () => {
+    const form = new FormData();
+    form.append("file", new File([new Uint8Array(10 * 1024 * 1024 + 1)], "too-large.xlsx"));
+    const request = new Request("https://site.test/api/imports", {
+      method: "POST",
+      headers: {
+        "oai-authenticated-user-id": "owner-1",
+        "oai-authenticated-user-email": "owner@example.test",
+      },
+      body: form,
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    expect(importWorkbook).not.toHaveBeenCalled();
+  });
 });

@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { v4Tables } from "./schema-v4";
+export * from "./schema-v4";
 
 const timestamps = {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -401,4 +403,5 @@ export const schema = {
   gmailConnections,
   gmailOAuthStates,
   emailDeliveries,
+  ...v4Tables,
 };

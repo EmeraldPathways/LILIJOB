@@ -6,6 +6,7 @@ import { importWorkbook } from "../../../lib/import/import-service";
 import { WorkbookParseError } from "../../../lib/import/parse-workbook";
 
 export const dynamic = "force-dynamic";
+const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 
 export async function GET(request: Request) {
   const user = userFromRequest(request);
@@ -30,6 +31,9 @@ export async function POST(request: Request) {
     const name = value.name.toLowerCase();
     if (!name.endsWith(".csv") && !name.endsWith(".xlsx")) {
       return Response.json({ error: { code: "UNSUPPORTED_FILE", message: "Only CSV and XLSX files are supported." } }, { status: 415 });
+    }
+    if (value.size > MAX_IMPORT_BYTES) {
+      return Response.json({ error: { code: "FILE_TOO_LARGE", message: "Imports must be 10 MB or smaller." } }, { status: 413 });
     }
     const summary = await importWorkbook(await value.arrayBuffer(), value.name, user.userId);
     return Response.json({ summary }, { status: 201 });

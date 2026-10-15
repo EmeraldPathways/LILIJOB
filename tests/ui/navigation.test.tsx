@@ -27,6 +27,7 @@ const destinations = [
   ["Startups", "/sectors/startups"],
   ["Tech Permits", "/sectors/tech-permits"],
   ["Fintech", "/sectors/fintech"],
+  ["Permit reality", "/permit"],
 ] as const;
 
 describe("shared workspace navigation", () => {
@@ -43,6 +44,7 @@ describe("shared workspace navigation", () => {
       ["/sectors/startups", "Startups", "/sectors/startups"],
       ["/sectors/tech-permits", "Tech Permits", "/sectors/tech-permits"],
       ["/sectors/fintech", "Fintech", "/sectors/fintech"],
+      ["/permit", "Permit reality", "/permit"],
     ] as const) {
       mockUsePathname.mockReturnValue(path);
       const html = renderToStaticMarkup(
@@ -53,6 +55,7 @@ describe("shared workspace navigation", () => {
 
       expect(html).toContain('aria-label="Workspace"');
       expect(html).toContain('aria-label="Manage"');
+      expect(html).toContain('aria-label="Intelligence"');
       expect(html).toContain(activeLabel);
       const activeLink = html.match(
         /<a\b(?=[^>]*aria-current="page")[^>]*>/,
@@ -71,6 +74,10 @@ describe("shared workspace navigation", () => {
       expect(manageGroup).toContain('href="/imports"');
       expect(manageGroup).toContain('href="/history"');
       expect(manageGroup).toContain('href="/settings"');
+      const intelligenceGroup = html.match(
+        /<nav\b(?=[^>]*aria-label="Intelligence")[^>]*>([\s\S]*?)<\/nav>/,
+      )?.[1];
+      expect(intelligenceGroup).toContain('href="/permit"');
 
       for (const [, href] of destinations) {
         const link = html.match(
