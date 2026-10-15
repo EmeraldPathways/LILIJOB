@@ -90,7 +90,7 @@ export function AppShell({initialCompanies,initialError=null,initialSector}:{use
     return save;
   }
   async function persistCell(id:string,column:string,value:string){
-    const response=await fetch(`/api/companies/${encodeURIComponent(id)}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({cells:{[column]:value}})});
+    const response=await fetch(`/api/companies/${encodeURIComponent(id)}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({cells:{[column]:value},...(currentCompanies.find(company=>company.id===id)?.sheetRows?.[sector]?{collection:sector}:{})})});
     const body=await response.json() as {error?:{message?:string}};
     if(!response.ok)throw new Error(body.error?.message??'Cell could not be saved.');
     const next=await loadCompanies();
@@ -132,6 +132,8 @@ export function AppShell({initialCompanies,initialError=null,initialSector}:{use
   }
   async function resume(){if(!activeRun||busyRef.current)return;busyRef.current=true;setBusy(true);stopRequested.current=false;try{await advanceRun(activeRun);}catch(error){setStatus(error instanceof Error?error.message:'Research could not resume.');}finally{busyRef.current=false;setBusy(false);}}
   const pending=activeRun&&activeRun.processed<activeRun.total;
+  const selectedSource=currentCompanies.find(company=>company.id===selectedId);
+  const displayedDetail=detail?.id===selectedId ? {...detail, importedData:selectedSource?.importedData??detail.importedData, sector:selectedSource?.sector??detail.sector} : null;
 
   return <section className="company-workspace">
       <div className="company-workspace-tools"><label className="workspace-sector-select"><span>Sector</span><select value={sector} onChange={event=>chooseSector(event.target.value)} aria-label="Sector"><option value={ALL_SECTORS}>All companies</option>{[...new Set([sector,...sectors])].filter(item=>item!==ALL_SECTORS).map(item=><option key={item}>{item}</option>)}</select></label><a href={`/api/exports?format=xlsx&sector=${encodeURIComponent(sector)}`} className="secondary-button"><Download size={15}/>Export Excel</a></div>
@@ -140,7 +142,7 @@ export function AppShell({initialCompanies,initialError=null,initialSector}:{use
       {status&&<div className="status-banner" role="status"><span>{status}</span><button aria-label="Dismiss status" onClick={()=>setStatus(null)}><X size={14}/></button></div>}
       {activeRun&&<div className="research-progress" aria-label="Research progress"><progress max={activeRun.total||1} value={activeRun.processed}/><span>{activeRun.processed}/{activeRun.total} processed</span></div>}
       {view==='detail'&&<label className="mobile-detail-picker"><span>Company profile</span><select aria-label="Select company profile" value={selectedId??''} onChange={event=>openDetail(event.target.value)}><option value="" disabled>Choose a company</option>{currentCompanies.map(company=><option key={company.id} value={company.id}>{company.name}</option>)}</select></label>}
-      {view==='sheet'?<section className="sheet-workspace" aria-label="Company workspace"><CompanySheet key={sector} companies={currentCompanies} selectedIds={selectedIds} onSelectionChange={setSelectedIds} onSaveCell={saveCell} onOpenDetail={openDetail}/></section>:<section className="workspace-grid workspace-detail-mode" aria-label="Company workspace"><CompanyList companies={visibleDetailCompanies} selectedId={selectedId} onSelect={openDetail} query={query} onQueryChange={setQuery} category={categoryForSector(sector)} filters={filters} onFiltersChange={setFilters}/><div className="detail-column"><div className="profile-region" role="region" aria-label="Company profile"><CompanyDetailView company={detail?.id===selectedId?detail:null} activeTab={activeTab} onTabChange={setActiveTab} onEnrich={()=>{if(selectedId)void research('selected',[selectedId]);}} enriching={busy}/></div><AiHelper companyId={selectedId}/></div></section>}
+      {view==='sheet'?<section className="sheet-workspace" aria-label="Company workspace"><CompanySheet key={sector} companies={currentCompanies} selectedIds={selectedIds} onSelectionChange={setSelectedIds} onSaveCell={saveCell} onOpenDetail={openDetail}/></section>:<section className="workspace-grid workspace-detail-mode" aria-label="Company workspace"><CompanyList companies={visibleDetailCompanies} selectedId={selectedId} onSelect={openDetail} query={query} onQueryChange={setQuery} category={categoryForSector(sector)} filters={filters} onFiltersChange={setFilters}/><div className="detail-column"><div className="profile-region" role="region" aria-label="Company profile"><CompanyDetailView company={displayedDetail} activeTab={activeTab} onTabChange={setActiveTab} onEnrich={()=>{if(selectedId)void research('selected',[selectedId]);}} enriching={busy}/></div><AiHelper companyId={selectedId}/></div></section>}
       <footer className="app-footer"><span>Research runs only when requested · Existing values are preserved</span><span>Enrichment: Luna low · Assistant: Luna medium</span></footer>
   </section>;
 }

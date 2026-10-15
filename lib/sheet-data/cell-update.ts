@@ -1,4 +1,4 @@
-import { isCountyDublinLocation, normalizeCompanyIdentity, normalizeDublinLocality, normalizeDomain } from "../domain/normalize";
+import { normalizeCompanyIdentity, normalizeDublinLocality, normalizeDomain } from "../domain/normalize";
 import type { CompanyCategory } from "../domain/types";
 import { COMPANY_CATEGORIES } from "../domain/types";
 import { mapWorkbookColumns } from "../import/map-columns";
@@ -69,13 +69,16 @@ function textCell(cells: Record<string, string>, header: string): string {
 export function buildCompanyCellUpdatePlan(
   company: CompanyCellSnapshot,
   cells: Record<string, string>,
+  collection?: string,
 ): CompanyCellUpdatePlan {
   if (!isRecord(cells) || Object.values(cells).some((value) => typeof value !== "string")) {
     throw new CellUpdateValidationError("Cells must be an object whose values are strings.");
   }
 
   const metadata = parseMetadata(company.metadataJson);
-  const original = parseOriginal(metadata.original);
+  const sheetRows = isRecord(metadata.sheetRows) ? metadata.sheetRows : {};
+  if (collection && !isRecord(sheetRows[collection])) throw new CellUpdateValidationError("Company is not in this collection.");
+  const original = parseOriginal(collection ? sheetRows[collection] : metadata.original);
   const mergedOriginal = { ...original, ...cells };
   const mapping = mapWorkbookColumns(Object.keys(mergedOriginal), { allowFirstColumnFallback: false });
   const updates: CompanyCellUpdatePlan["updates"] = {};
@@ -109,9 +112,6 @@ export function buildCompanyCellUpdatePlan(
 
   if (hasCell(cells, mapping.location)) {
     const location = textCell(cells, mapping.location);
-    if (location && !isCountyDublinLocation(location)) {
-      throw new CellUpdateValidationError("Location must be within County Dublin.");
-    }
     updates.locationText = location || null;
     updates.locality = normalizeDublinLocality(location);
   }
@@ -153,7 +153,7 @@ export function buildCompanyCellUpdatePlan(
   const categoryCellHeader = mapping.category ?? mapping.sector;
   if (hasCell(cells, categoryCellHeader)) {
     category = categoryValue(textCell(cells, categoryCellHeader));
-    updateCategories = true;
+    updateCategories = !collection;
   }
 
   const mappedHeaders = new Set([
@@ -172,7 +172,8 @@ export function buildCompanyCellUpdatePlan(
     if (!mappedHeaders.has(header)) metadata[header] = value;
   }
 
-  metadata.original = mergedOriginal;
+  if (collection) metadata.sheetRows = { ...sheetRows, [collection]: mergedOriginal };
+  else metadata.original = mergedOriginal;
   updates.metadataJson = JSON.stringify(metadata);
   return { updates, category, updateCategories };
 }

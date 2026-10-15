@@ -20,6 +20,8 @@ export type ParsedWorkbook = {
   headers: string[];
   rows: Record<string, string>[];
   dataStartRow?: number;
+  rowSheetNames?: string[];
+  rowNumbers?: number[];
 };
 
 export type ImportPlanRow = {
@@ -33,7 +35,7 @@ export type ImportPlanRow = {
   description: string | null;
   employeeBand: string | null;
   foundedYear: number | null;
-  metadata: Record<string, string>;
+  metadata: Record<string, unknown>;
   original: Record<string, string>;
 };
 

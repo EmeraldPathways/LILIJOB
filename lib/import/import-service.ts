@@ -29,8 +29,7 @@ function companyLookup(rows: CompanyRow[]): CompanyLookup {
 }
 
 function findCompany(identity: ReturnType<typeof normalizeCompanyIdentity>, lookup: CompanyLookup): CompanyRow | undefined {
-  return (identity.domain ? lookup.byDomain.get(identity.domain) : undefined)
-    ?? lookup.byName.get(identity.normalizedName);
+  return lookup.byName.get(identity.normalizedName);
 }
 
 function indexCompany(row: CompanyRow, lookup: CompanyLookup, previousDomain?: string | null): void {
@@ -169,7 +168,7 @@ export async function importWorkbook(
         const existingOriginal = existingMetadata.original && typeof existingMetadata.original === "object" ? existingMetadata.original as Record<string, unknown> : {};
         const changes = {
           website: row.website ?? matched.website,
-          domain: identity.domain ?? matched.domain,
+          domain: identity.domain && (!lookup.byDomain.has(identity.domain) || lookup.byDomain.get(identity.domain)?.id === matched.id) ? identity.domain : matched.domain,
           aliasesJson: row.aliases.length ? JSON.stringify(row.aliases) : matched.aliasesJson,
           description: row.description ?? matched.description,
           locationText: row.location ?? matched.locationText,
@@ -177,7 +176,7 @@ export async function importWorkbook(
           employeeBand: row.employeeBand ?? matched.employeeBand,
           foundedYear: row.foundedYear ?? matched.foundedYear,
           enrichmentStatus: matched.lastEnrichedAt || matched.enrichmentStatus !== "queued" ? matched.enrichmentStatus : "not-enriched",
-          metadataJson: JSON.stringify({ ...existingMetadata, ...row.metadata, ...(row.careersUrl ? { careersUrl: row.careersUrl } : {}), original: { ...existingOriginal, ...row.original } }),
+          metadataJson: JSON.stringify({ ...existingMetadata, ...row.metadata, collections: [...new Set([...(Array.isArray(existingMetadata.collections) ? existingMetadata.collections : []), ...(Array.isArray(row.metadata.collections) ? row.metadata.collections : [])])], sheetRows: { ...(existingMetadata.sheetRows as object ?? {}), ...(row.metadata.sheetRows as object ?? {}) }, ...(row.careersUrl ? { careersUrl: row.careersUrl } : {}), original: { ...existingOriginal, ...row.original } }),
         };
         companyWrites.push(db.update(companies).set({ ...changes, updatedAt: now }).where(and(eq(companies.ownerId, ownerId), eq(companies.id, matched.id))));
         const updated = { ...matched, ...changes, updatedAt: now };
@@ -188,7 +187,7 @@ export async function importWorkbook(
             ownerId,
             name: identity.name,
             normalizedName: identity.normalizedName,
-            domain: identity.domain,
+            domain: identity.domain && !lookup.byDomain.has(identity.domain) ? identity.domain : null,
             website: row.website,
             aliasesJson: JSON.stringify(identity.aliases),
             description: row.description,

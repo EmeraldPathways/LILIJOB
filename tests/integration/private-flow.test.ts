@@ -11,7 +11,7 @@ describe("private workbench flow boundaries", () => {
     const tools = createAgentTools(user?.userId ?? "", { searchCompanies });
 
     expect(user?.userId).toBe("owner-1");
-    expect(plan.rows.map((row) => row.companyName)).toEqual(["Dublin Example"]);
+    expect(plan.rows.map((row) => row.companyName)).toEqual(["Dublin Example", "Cork Example"]);
     await tools.searchSaved({ category: "fintech" });
     expect(searchCompanies).toHaveBeenCalledWith("owner-1", { category: "fintech" });
   });

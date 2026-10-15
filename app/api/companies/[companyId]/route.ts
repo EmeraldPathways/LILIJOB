@@ -35,8 +35,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ compa
     if (!cells || typeof cells !== "object" || Array.isArray(cells) || Object.values(cells).some((value) => typeof value !== "string")) {
       return Response.json({ error: { code: "INVALID_CELLS", message: "Cells must be an object whose values are strings." } }, { status: 400 });
     }
+    const collection = (body as { collection?: unknown }).collection;
+    if (collection !== undefined && (typeof collection !== "string" || collection.length > 100)) return Response.json({error:{message:"Invalid collection."}}, {status:400});
     try {
-      const company = await updateCompanyCells(user.userId, companyId, cells as Record<string, string>);
+      const company = await updateCompanyCells(user.userId, companyId, cells as Record<string, string>, collection as string | undefined);
       if (!company) return Response.json({ error: { code: "NOT_FOUND", message: "Company not found." } }, { status: 404 });
       return Response.json({ company });
     } catch (error) {

@@ -156,3 +156,51 @@ describe("Excel import persistence", () => {
     expect(state.env.BUCKET.put).toHaveBeenCalledTimes(1);
   });
 });
+
+it("keeps all worksheet memberships, source fields, and companies sharing domains", async () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ["Company", "Sector", "Address", "Website", "Company LinkedIn URL", "Company contact email", "Company careers page", "Unique Sectors: 14"],
+    ["Shared Co", "Payments", "Cork", "https://shared.example", "https://linkedin.com/company/shared", "hi@shared.example", "[link removed]", ""],
+    ["Other Legal Entity", "Services", "Dublin", "https://shared.example", "", "", "", ""],
+  ]), "Fintech");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ["Company Name", "Sector", "Address", "Website", "Permit Amount"],
+    ["Shared Co", "Technology", "Dublin", "https://shared.example", "42"],
+  ]), "Tech Permits");
+  const summary = await importWorkbook(toArrayBuffer(XLSX.write(workbook, {type:"buffer",bookType:"xlsx"})), "multi.xlsx", "owner-2");
+  expect(summary).toMatchObject({rowCount:3,accepted:2,duplicates:1,errors:[],runId:null});
+  expect(summary.queuedCompanyIds).toHaveLength(2);
+  const rows = sqlite.prepare("SELECT name, metadata_json FROM companies WHERE owner_id = ?").all("owner-2") as {name:string;metadata_json:string}[];
+  expect(rows).toHaveLength(2);
+  const metadata = JSON.parse(rows.find(row=>row.name==="Shared Co")!.metadata_json);
+  expect(metadata.collections).toEqual(["Fintech", "Tech Permits"]);
+  expect(metadata.sheetRows.Fintech).toMatchObject({Sector:"Payments",Address:"Cork",Email:"hi@shared.example",Careers:"[link removed]"});
+  expect(metadata.sheetRows["Tech Permits"]).toMatchObject({Sector:"Technology","Permit Amount":"42"});
+  expect(metadata.careersUrl).toBeUndefined();
+  expect(metadata.original["Unique Sectors: 14"]).toBeUndefined();
+});
+
+it.skipIf(!process.env.WORKBOOK_VERIFY_PATH)("reconciles the supplied four-tab workbook against SQLite", async () => {
+  const {readFileSync} = await import('node:fs');
+  const file = toArrayBuffer(readFileSync(process.env.WORKBOOK_VERIFY_PATH!));
+  const {parseWorkbook,buildImportPlan}=await import('../../lib/import/parse-workbook');
+  const plan=buildImportPlan(await parseWorkbook(file,'LILI JOB HUNT DATA.xlsx'));
+  const summary=await importWorkbook(file,'LILI JOB HUNT DATA.xlsx','workbook-owner');
+  expect(summary.rowCount).toBe(991);
+  expect(summary.errors).toEqual([]);
+  const rows=sqlite.prepare('SELECT normalized_name, metadata_json, enrichment_status FROM companies WHERE owner_id=?').all('workbook-owner') as {normalized_name:string;metadata_json:string;enrichment_status:string}[];
+  const byName=new Map(rows.map(row=>[row.normalized_name,row]));
+  const {normalizeCompanyIdentity}=await import('../../lib/domain/normalize');
+  let exact=0;
+  for(const row of plan.rows){
+    const stored=byName.get(normalizeCompanyIdentity({companyName:row.companyName}).normalizedName)!;
+    expect(stored).toBeDefined();
+    const metadata=JSON.parse(stored.metadata_json);
+    const label=(row.metadata.collections as string[])[0];
+    expect(metadata.sheetRows[label]).toEqual(row.original);
+    expect(stored.enrichment_status).toBe('not-enriched');
+    exact++;
+  }
+  console.log('WORKBOOK_RECONCILIATION',JSON.stringify({sourceRows:exact,uniqueCompanies:rows.length,accepted:summary.accepted,duplicates:summary.duplicates}));
+});

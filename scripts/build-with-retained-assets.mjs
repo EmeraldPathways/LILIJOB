@@ -1,6 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+const previous=path.resolve('dist/client/_next/static');
+const archive=path.resolve('compatibility/client-assets/_next/static');
+if(existsSync(previous)){mkdirSync(archive,{recursive:true});cpSync(previous,archive,{recursive:true,force:false,errorOnExist:false});}
 const result=spawnSync(process.execPath,['scripts/run-framework.mjs','build'],{stdio:'inherit'});
 if(result.status!==0)process.exit(result.status??1);
 const retained=path.resolve('compatibility/client-assets/_next/static');

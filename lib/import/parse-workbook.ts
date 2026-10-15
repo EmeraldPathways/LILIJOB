@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import { COMPANY_CATEGORIES, type CompanyCategory } from "../domain/types";
-import { isCountyDublinLocation, normalizeCompanyIdentity } from "../domain/normalize";
+import { normalizeCompanyIdentity } from "../domain/normalize";
 import { isLikelyHeaderRow, mapWorkbookColumns } from "./map-columns";
 import type {
   ImportPlan,
@@ -41,51 +41,51 @@ export async function parseWorkbook(
 ): Promise<ParsedWorkbook> {
   const bytes = file instanceof ArrayBuffer ? new Uint8Array(file) : file;
   const workbook = XLSX.read(bytes, { type: "array", raw: false, cellDates: false });
-  const firstSheet = workbook.SheetNames[0];
-  if (!firstSheet) {
-    throw new WorkbookParseError("This workbook has no worksheets. Add a worksheet with a header row and company data.");
-  }
-  const sheet = workbook.Sheets[firstSheet];
-  const reference = sheet["!ref"];
-  if (!reference) {
-    throw new WorkbookParseError("This worksheet is empty. Add a header row and at least one company row.");
-  }
-  const range = XLSX.utils.decode_range(reference);
-  const width = range.e.c - range.s.c + 1;
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
-    header: 1,
-    defval: "",
-    raw: false,
-    blankrows: true,
-    range,
-  });
-  const normalizedMatrix = matrix.map((values) =>
-    Array.from({ length: width }, (_, index) => asText(values[index])),
-  );
-  let headerIndex = -1;
-  let headerScore = -1;
-  normalizedMatrix.forEach((values, index) => {
-    if (!isLikelyHeaderRow(values)) return;
-    const mapping = mapWorkbookColumns(values, { allowFirstColumnFallback: false });
-    const score = Object.values(mapping).filter((value) => typeof value === "string").length;
-    if (score > headerScore) {
-      headerIndex = index;
-      headerScore = score;
-    }
-  });
-  if (headerIndex < 0) {
-    throw new WorkbookParseError("Could not find a company header row. Add a row with a company name column and try again.");
-  }
-  const headers = uniqueHeaders(normalizedMatrix[headerIndex] ?? [], range.s.c);
-  const rows = normalizedMatrix.slice(headerIndex + 1).map((values) => {
-    const row: Record<string, string> = {};
-    headers.forEach((header, index) => {
-      row[header] = asText(values[index]);
+  const headers: string[] = [];
+  const rows: Record<string, string>[] = [];
+  const rowSheetNames: string[] = [];
+  const rowNumbers: number[] = [];
+  const multiple = workbook.SheetNames.length > 1;
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet["!ref"]) continue;
+    const range = XLSX.utils.decode_range(sheet["!ref"]!);
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: false, blankrows: true, range });
+    const normalizedMatrix = matrix.map(values => Array.from({ length: range.e.c - range.s.c + 1 }, (_, index) => asText(values[index])));
+    let headerIndex = -1;
+    let headerScore = -1;
+    normalizedMatrix.forEach((values, index) => {
+      if (!isLikelyHeaderRow(values)) return;
+      const mapping = mapWorkbookColumns(values, { allowFirstColumnFallback: false });
+      const score = Object.values(mapping).filter(value => typeof value === "string").length;
+      if (score > headerScore) { headerIndex = index; headerScore = score; }
     });
-    return row;
-  });
-
-  return { fileName, headers, rows, dataStartRow: headerIndex + range.s.r + 2 };
+    if (headerIndex < 0) throw new WorkbookParseError(`Could not find a company header row in ${sheetName}.`);
+    const sourceHeaders = uniqueHeaders(normalizedMatrix[headerIndex], range.s.c);
+    const mapping = mapWorkbookColumns(sourceHeaders, { allowFirstColumnFallback: false });
+    const names: Record<string, string> = {};
+    if (multiple) {
+      for (const [field, label] of Object.entries({companyName:"Company", sector:"Sector", location:"Address", website:"Website", careersUrl:"Careers"})) {
+        const source = mapping[field];
+        if (typeof source === "string") names[source] = label;
+      }
+      for (const header of sourceHeaders) {
+        const key = header.toLowerCase().replace(/[^a-z]/g, "");
+        if (["linkedin", "companylinkedinurl"].includes(key)) names[header] = "LinkedIn";
+        if (["email", "contactemail", "companycontactemail"].includes(key)) names[header] = "Email";
+      }
+    }
+    const active = sourceHeaders.map((header, index) => ({header, index})).filter(({index}) => !multiple || Boolean(names[sourceHeaders[index]]) || normalizedMatrix.slice(headerIndex + 1).some(values => values[index]));
+    for (const {header} of active) if (!headers.includes(names[header] ?? header)) headers.push(names[header] ?? header);
+    normalizedMatrix.slice(headerIndex + 1).forEach((values, index) => {
+      if (values.every(value => !value)) return;
+      rows.push(Object.fromEntries(active.map(({header, index}) => [names[header] ?? header, asText(values[index])])));
+      rowSheetNames.push(sheetName);
+      rowNumbers.push(range.s.r + headerIndex + index + 2);
+    });
+  }
+  if (!rows.length) throw new WorkbookParseError("This workbook is empty. Add a company header and at least one company row.");
+  return { fileName, headers, rows, dataStartRow: rowNumbers[0], rowSheetNames, rowNumbers };
 }
 
 function get(row: Record<string, string>, header: string | undefined): string {
@@ -109,7 +109,7 @@ function inferredCategory(fileName: string): CompanyCategory | null {
 }
 
 export function buildImportPlan(workbook: ParsedWorkbook): ImportPlan {
-  const mapping = mapWorkbookColumns(workbook.headers);
+
   const defaultCategory = inferredCategory(workbook.fileName);
   const rows: ImportPlanRow[] = [];
   const errors: ImportPlan["errors"] = [];
@@ -117,7 +117,8 @@ export function buildImportPlan(workbook: ParsedWorkbook): ImportPlan {
   let duplicates = 0;
 
   workbook.rows.forEach((row, index) => {
-    const rowNumber = (workbook.dataStartRow ?? 2) + index;
+    const mapping = mapWorkbookColumns(Object.keys(row));
+    const rowNumber = workbook.rowNumbers?.[index] ?? (workbook.dataStartRow ?? 2) + index;
     const original = Object.fromEntries(
       Object.entries(row).map(([key, value]) => [key, asText(value)]),
     );
@@ -131,17 +132,13 @@ export function buildImportPlan(workbook: ParsedWorkbook): ImportPlan {
 
     const website = get(row, mapping.website) || null;
     const location = get(row, mapping.location) || null;
-    if (location && !isCountyDublinLocation(location)) {
-      errors.push({ row: rowNumber, message: "Location is outside County Dublin" });
-      return;
-    }
     const identity = normalizeCompanyIdentity({ companyName, website });
-    if (seen.has(identity.dedupeKey)) {
+    if (seen.has(identity.normalizedName)) {
       duplicates += 1;
     }
-    seen.add(identity.dedupeKey);
+    seen.add(identity.normalizedName);
 
-    const metadata: Record<string, string> = {};
+    const metadata: Record<string, unknown> = {};
     for (const header of mapping.unknown) {
       const value = get(row, header);
       if (value) metadata[header] = value;
@@ -150,6 +147,9 @@ export function buildImportPlan(workbook: ParsedWorkbook): ImportPlan {
     const sector = get(row, mapping.sector ?? mapping.category);
     if (sector) metadata.sector = sector;
 
+    const sheet = workbook.rowSheetNames?.[index];
+    const collection = sheet && ({fintech:"Fintech",techpermits:"Tech Permits",ecommerce:"Ecommerce",startups:"Startups"} as Record<string,string>)[sheet.toLowerCase().replace(/[^a-z]/g, "")];
+    if (collection) { metadata.collections = [collection]; metadata.sheetRows = { [collection]: original }; }
     const aliases = get(row, mapping.aliases)
       .split(/[;|]/)
       .map((value) => value.trim())
@@ -161,11 +161,11 @@ export function buildImportPlan(workbook: ParsedWorkbook): ImportPlan {
       companyName,
       website,
       aliases,
-      category: categoryValue(
+      category: (collection ? inferredCategory(collection.replace("Tech Permits", "work permit")) : null) ?? categoryValue(
         mapping.category ? get(row, mapping.category) : sector,
       ) ?? defaultCategory,
       location,
-      careersUrl: get(row, mapping.careersUrl) || null,
+      careersUrl: /^https?:\/\//i.test(get(row, mapping.careersUrl)) ? get(row, mapping.careersUrl) : null,
       description: get(row, mapping.description) || null,
       employeeBand: get(row, mapping.employeeBand) || null,
       foundedYear: Number.isFinite(founded) ? founded : null,

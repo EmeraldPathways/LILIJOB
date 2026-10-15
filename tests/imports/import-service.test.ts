@@ -42,7 +42,7 @@ describe("workbook import planning", () => {
     ]);
   });
 
-  it("does not queue an explicitly out-of-county company", async () => {
+  it("preserves an explicitly out-of-county source company", async () => {
     const csv = [
       "Company,Location",
       "Cork Example,Cork",
@@ -51,12 +51,12 @@ describe("workbook import planning", () => {
 
     const plan = buildImportPlan(await parseWorkbook(Buffer.from(csv), "companies.csv"));
 
-    expect(plan.accepted).toBe(1);
-    expect(plan.rows.map((row) => row.companyName)).toEqual(["Dublin Example"]);
-    expect(plan.errors).toEqual([{ row: 2, message: "Location is outside County Dublin" }]);
+    expect(plan.accepted).toBe(2);
+    expect(plan.rows).toHaveLength(2);
+    expect(plan.errors).toEqual([]);
   });
 
-  it("does not treat a generic Ireland location as County Dublin", async () => {
+  it("preserves a generic Ireland source location", async () => {
     const csv = [
       "Company,Location",
       "Ireland Example,Ireland",
@@ -65,9 +65,9 @@ describe("workbook import planning", () => {
 
     const plan = buildImportPlan(await parseWorkbook(Buffer.from(csv), "companies.csv"));
 
-    expect(plan.accepted).toBe(1);
-    expect(plan.rows.map((row) => row.companyName)).toEqual(["Dublin Example"]);
-    expect(plan.errors).toEqual([{ row: 2, message: "Location is outside County Dublin" }]);
+    expect(plan.accepted).toBe(2);
+    expect(plan.rows).toHaveLength(2);
+    expect(plan.errors).toEqual([]);
   });
 
   it("finds the real header row after spreadsheet title rows and keeps source fields as metadata", async () => {

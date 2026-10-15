@@ -43,7 +43,7 @@ const aliases: Record<MappedField, string[]> = {
     "county",
     "address",
   ],
-  careersUrl: ["careers", "careers url", "career page", "jobs", "jobs url", "job page"],
+  careersUrl: ["careers", "careers url", "career page", "careers page", "company careers page", "jobs", "jobs url", "job page"],
   description: ["description", "about", "company description", "summary"],
   employeeBand: ["employees", "employee count", "employee band", "company size", "size"],
   foundedYear: ["founded", "founded year", "year founded"],

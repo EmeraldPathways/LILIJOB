@@ -29,13 +29,13 @@ export function sectorName(company: CompanyListItem): string {
 }
 export function sectorChoices(companies: CompanyListItem[]): string[] {
   const labels=new Map<string,string>();
-  for(const company of companies){const label=sectorName(company);if(!labels.has(label.toLowerCase()))labels.set(label.toLowerCase(),label);}
+  for(const company of companies){for(const label of company.collections?.length ? company.collections : [sectorName(company)]){if(!labels.has(label.toLowerCase()))labels.set(label.toLowerCase(),label);}}
   return [...labels.values()].sort((a,b)=>a.localeCompare(b));
 }
 export function sectorCompanies(companies: CompanyListItem[], sector: string): CompanyListItem[] {
   if(sector===ALL_SECTORS)return companies;
   const key=canonicalSector(sector);
-  return companies.filter(company=>canonicalSector(sectorName(company))===key || (key==='tech-permits'&&(company.categories.includes('work-permit')||company.permitSignal==='confirmed'||company.permitSignal==='potential')));
+  return companies.filter(company=>(company.collections?.some(value=>canonicalSector(value)===key) ?? false) || canonicalSector(sectorName(company))===key || (key==='tech-permits'&&(company.categories.includes('work-permit')||company.permitSignal==='confirmed'||company.permitSignal==='potential'))).map(company=>{const label=Object.keys(company.sheetRows??{}).find(value=>canonicalSector(value)===key);return label?{...company,importedData:company.sheetRows![label],sector:company.sheetRows![label].Sector??company.sector}:company;});
 }
 export function researchTargets(companies: CompanyListItem[], sector:string, scope:'all'|'selected', selectedIds:readonly string[]):string[] {
   if(scope==='all' && sector===ALL_SECTORS) throw new Error('Choose a sector before researching all companies.');

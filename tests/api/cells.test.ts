@@ -62,7 +62,7 @@ describe("company cell update API", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ company });
-    expect(updateCompanyCells).toHaveBeenCalledWith("owner-1", "co-1", { Sector: "Clean energy" });
+    expect(updateCompanyCells).toHaveBeenCalledWith("owner-1", "co-1", { Sector: "Clean energy" }, undefined);
   });
 
   it("reports companies outside the owner scope as not found", async () => {

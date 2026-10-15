@@ -30,6 +30,8 @@ export type CompanyListItem = {
   name: string;
   sector?: string | null;
   importedData?: Record<string, string>;
+  collections?: string[];
+  sheetRows?: Record<string, Record<string, string>>;
   domain: string | null;
   website: string | null;
   locality: DublinLocality | null;
@@ -71,6 +73,8 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
 export function companySheetFields(metadataJson: string | null): {
   sector: string | null;
   importedData: Record<string, string>;
+  collections?: string[];
+  sheetRows?: Record<string, Record<string, string>>;
 } {
   const metadata = parseJson<Record<string, unknown>>(metadataJson, {});
   const original = metadata.original;
@@ -82,6 +86,8 @@ export function companySheetFields(metadataJson: string | null): {
   return {
     sector: typeof metadata.sector === "string" && metadata.sector.trim() ? metadata.sector : null,
     importedData,
+    ...(Array.isArray(metadata.collections) ? {collections: metadata.collections.filter((value): value is string => typeof value === "string")} : {}),
+    ...(metadata.sheetRows && typeof metadata.sheetRows === "object" ? {sheetRows: metadata.sheetRows as Record<string, Record<string,string>>} : {}),
   };
 }
 
@@ -260,6 +266,7 @@ export async function updateCompanyCells(
   ownerId: string,
   companyId: string,
   cells: Record<string, string>,
+  collection?: string,
 ): Promise<CompanyDetail | null> {
   const db = getDb();
   const [row] = await db
@@ -282,7 +289,7 @@ export async function updateCompanyCells(
     foundedYear: row.foundedYear,
     metadataJson: row.metadataJson,
   };
-  const plan = buildCompanyCellUpdatePlan(snapshot, cells);
+  const plan = buildCompanyCellUpdatePlan(snapshot, cells, collection);
 
   if (plan.updates.normalizedName || (plan.updates.domain && plan.updates.domain !== row.domain)) {
     const peers = await db

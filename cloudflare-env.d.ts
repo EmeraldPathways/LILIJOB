@@ -1,5 +1,9 @@
 declare namespace Cloudflare {
   interface Env {
+    ADMIN_IMPORT_TOKEN?: string;
+    ADMIN_IMPORT_OWNER_ID?: string;
+    ADMIN_IMPORT_SHA256?: string;
+    ADMIN_IMPORT_EXPIRES_AT?: string;
     DB?: D1Database;
     BUCKET?: R2Bucket;
     OPENAI_API_KEY?: string;
