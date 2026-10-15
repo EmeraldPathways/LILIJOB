@@ -1,6 +1,6 @@
 ## Shared navigation and Gmail outreach
 
-All authenticated sections render beside one persistent sidebar. Workspace contains Companies, Email and AI assistant; Manage contains Imports, Research history and Settings. Select company rows and choose Email selected, or select recipients in Email.
+All authenticated sections render beside one persistent sidebar. Navigation uses native same-tab links so it remains usable if a client chunk fails. Prior release assets are retained under compatibility/client-assets and copied to the production static directory after building, and HTML/RSC responses are not cached; this prevents already-open pages losing their lazy-loaded chunks after publication. Workspace contains Companies, Email and AI assistant; Sectors contains permanent Ecommerce, Startups, Tech Permits and Fintech links. Manage contains Imports, Research history and Settings. Select company rows and choose Email selected, or select recipients in Email.
 
 Email sends separate messages through each user's Google account after explicit recipient review. Google OAuth credentials are required before connecting. See [Gmail setup](docs/gmail-setup.md). Tokens are encrypted in D1, sending history is owner scoped, and duplicate request IDs do not resend deliveries. The UI makes one-company requests serially and does not automatically retry uncertain sends.
 

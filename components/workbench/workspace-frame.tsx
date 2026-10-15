@@ -1,12 +1,17 @@
 "use client";
 
+/* eslint-disable @next/next/no-html-link-for-pages -- Native links must work when a client chunk fails to load. */
+
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Building2,
   Compass,
   History,
+  ShoppingCart,
+  Rocket,
+  ShieldCheck,
+  Landmark,
   LogOut,
   Mail,
   Menu,
@@ -15,6 +20,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { SIDEBAR_SECTORS } from "../../lib/workbench/sector-workspace";
 import type { ChatGPTUser } from "../../app/chatgpt-auth";
 
 type WorkspaceFrameProps = {
@@ -30,6 +36,10 @@ const navigationGroups = [
       { label: "Email", href: "/email", icon: Mail },
       { label: "AI assistant", href: "/ai", icon: Sparkles },
     ],
+  },
+  {
+    label: "Sectors",
+    links: SIDEBAR_SECTORS.map((sector,index)=>({label:sector.label,href:`/sectors/${sector.slug}`,icon:[ShoppingCart,Rocket,ShieldCheck,Landmark][index]})),
   },
   {
     label: "Manage",
@@ -87,7 +97,7 @@ export function WorkspaceFrame({ user, children }: WorkspaceFrameProps) {
           <Menu size={18} aria-hidden="true" />
         </button>
 
-        <Link className="workspace-frame__brand" href="/">
+        <a className="workspace-frame__brand" href="/">
           <span className="workspace-frame__brand-mark" aria-hidden="true">
             <Compass size={19} />
           </span>
@@ -95,7 +105,7 @@ export function WorkspaceFrame({ user, children }: WorkspaceFrameProps) {
             <strong>Dublin Tech Compass</strong>
             <small>Private research workspace</small>
           </span>
-        </Link>
+        </a>
 
         <div className="workspace-frame__topbar-spacer" />
 
@@ -164,7 +174,7 @@ export function WorkspaceFrame({ user, children }: WorkspaceFrameProps) {
                   const active = isActivePath(pathname, href);
 
                   return (
-                    <Link
+                    <a
                       className={`workspace-frame__nav-link${active ? " workspace-frame__nav-link--active" : ""}`}
                       href={href}
                       aria-current={active ? "page" : undefined}
@@ -173,7 +183,7 @@ export function WorkspaceFrame({ user, children }: WorkspaceFrameProps) {
                     >
                       <Icon size={17} aria-hidden="true" />
                       <span>{label}</span>
-                    </Link>
+                    </a>
                   );
                 })}
               </div>

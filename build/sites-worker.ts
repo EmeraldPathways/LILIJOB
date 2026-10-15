@@ -23,6 +23,15 @@ export default {
         },
       };
     }
-    return runWithConnectorBinding(binding, () => handler.fetch(request, env, ctx));
+    return runWithConnectorBinding(binding, async () => {
+      const response = await handler.fetch(request, env, ctx);
+      const contentType = response.headers.get("content-type") ?? "";
+      if (contentType.includes("text/html") || contentType.includes("text/x-component")) {
+        const headers = new Headers(response.headers);
+        headers.set("cache-control", "private, no-store");
+        return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+      }
+      return response;
+    });
   },
 };

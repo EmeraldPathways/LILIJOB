@@ -6,7 +6,7 @@ import "./workspace-tools.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Mail, Search, Sparkles, X } from 'lucide-react';
 import type { CompanyDetail, CompanyListItem } from '../../lib/repositories/company-repository';
-import { ALL_SECTORS, categoryForSector, sectorChoices, sectorCompanies } from '../../lib/workbench/sector-workspace';
+import { ALL_SECTORS, categoryForSector, sectorChoices, sectorCompanies, sectorPath } from '../../lib/workbench/sector-workspace';
 import { CompanyList } from './company-list';
 import { CompanyDetail as CompanyDetailView } from './company-detail';
 import { CompanySheet } from './company-sheet';
@@ -18,9 +18,9 @@ export type AppShellUser = { displayName: string; email: string };
 type ResearchRun = { id: string; status: string; total: number; processed: number; succeeded: number; failed: number };
 const EMPTY_FILTERS:CompanyListFilterState={locality:'all',status:'all',permitSignal:'all',freshness:'all',confidence:'all',openRoles:'all'};
 
-export function AppShell({initialCompanies,initialError=null}:{user:AppShellUser;initialCompanies:CompanyListItem[];initialError?:string|null}) {
+export function AppShell({initialCompanies,initialError=null,initialSector}:{user:AppShellUser;initialCompanies:CompanyListItem[];initialError?:string|null;initialSector?:string}) {
   const [companies,setCompanies]=useState(initialCompanies);
-  const [sector,setSector]=useState(()=>sectorChoices(initialCompanies)[0]??ALL_SECTORS);
+  const [sector,setSector]=useState(()=>initialSector??sectorChoices(initialCompanies)[0]??ALL_SECTORS);
   const [view,setView]=useState<'sheet'|'detail'>('sheet');
   const [selectedIds,setSelectedIds]=useState<string[]>([]);
   const [selectedId,setSelectedId]=useState<string|null>(initialCompanies[0]?.id??null);
@@ -82,7 +82,7 @@ export function AppShell({initialCompanies,initialError=null}:{user:AppShellUser
   },[]);
   useEffect(()=>{stopRequested.current=false;return()=>{stopRequested.current=true;};},[]);
 
-  function chooseSector(value:string){setSector(value);setSelectedIds([]);setQuery('');setFilters(EMPTY_FILTERS);const first=sectorCompanies(companies,value)[0];setSelectedId(first?.id??null);setDetail(null);}
+  function chooseSector(value:string){window.location.assign(sectorPath(value));setSector(value);setSelectedIds([]);setQuery('');setFilters(EMPTY_FILTERS);const first=sectorCompanies(companies,value)[0];setSelectedId(first?.id??null);setDetail(null);}
   function openDetail(id:string){setSelectedId(id);setDetail(null);setActiveTab('overview');setView('detail');}
   function saveCell(id:string,column:string,value:string):Promise<void>{
     const save=cellSaveQueue.current.catch(()=>undefined).then(()=>persistCell(id,column,value));
@@ -134,8 +134,8 @@ export function AppShell({initialCompanies,initialError=null}:{user:AppShellUser
   const pending=activeRun&&activeRun.processed<activeRun.total;
 
   return <section className="company-workspace">
-      <div className="company-workspace-tools"><label className="workspace-sector-select"><span>Sector</span><select value={sector} onChange={event=>chooseSector(event.target.value)} aria-label="Sector"><option value={ALL_SECTORS}>All companies</option>{sectors.map(item=><option key={item}>{item}</option>)}</select></label><a href={`/api/exports?format=xlsx&sector=${encodeURIComponent(sector)}`} className="secondary-button"><Download size={15}/>Export Excel</a></div>
-      <section className="workspace-header"><div><p className="eyebrow">County Dublin · {sector}</p><h1 className="workspace-title">Your company workspace.</h1><p className="workspace-description">Bring your Excel data into one place. Edit your sheet or open a profile, then choose which companies to research.</p></div><div className="workspace-actions"><ImportDialog onImported={async()=>{const next=await loadCompanies();const nextSectors=sectorChoices(next);if(sector===ALL_SECTORS&&nextSectors.length===1)setSector(nextSectors[0]);}}/></div></section>
+      <div className="company-workspace-tools"><label className="workspace-sector-select"><span>Sector</span><select value={sector} onChange={event=>chooseSector(event.target.value)} aria-label="Sector"><option value={ALL_SECTORS}>All companies</option>{[...new Set([sector,...sectors])].filter(item=>item!==ALL_SECTORS).map(item=><option key={item}>{item}</option>)}</select></label><a href={`/api/exports?format=xlsx&sector=${encodeURIComponent(sector)}`} className="secondary-button"><Download size={15}/>Export Excel</a></div>
+      <section className="workspace-header"><div><p className="eyebrow">County Dublin · {sector}</p><h1 className="workspace-title">{sector===ALL_SECTORS?'Your company workspace.':`${sector} workspace`}</h1><p className="workspace-description">Bring your Excel data into one place. Edit your sheet or open a profile, then choose which companies to research.</p></div><div className="workspace-actions"><ImportDialog onImported={async()=>{const next=await loadCompanies();const nextSectors=sectorChoices(next);if(sector===ALL_SECTORS&&nextSectors.length===1)setSector(nextSectors[0]);}}/></div></section>
       <section className="sector-toolbar" aria-label="Sector views and research"><div className="view-switch" role="group" aria-label="Company view"><button type="button" aria-pressed={view==='sheet'} onClick={()=>setView('sheet')}>Sheet view</button><button type="button" aria-pressed={view==='detail'} onClick={()=>{setView('detail');if(!selectedId)setSelectedId(currentCompanies[0]?.id??null);}}>Detailed view</button></div><span className="sector-summary">{currentCompanies.length} companies · {selectedIds.length} selected</span><div className="research-actions">{selectedIds.length>0&&<Link className="secondary-button" href={`/email?companies=${encodeURIComponent(selectedIds.join(','))}`}><Mail size={15}/>Email selected ({selectedIds.length})</Link>}<button className="secondary-button" type="button" disabled={busy||!selectedIds.length} onClick={()=>void research('selected')}><Search size={15}/>Research selected ({selectedIds.length})</button><button className="primary-button" type="button" disabled={busy||!currentCompanies.length||sector===ALL_SECTORS} title={sector===ALL_SECTORS?'Choose a sector first':'Research every company in this sector'} onClick={()=>void research('all')}><Sparkles size={15}/>Research all in sector</button>{busy&&<button className="secondary-button" onClick={()=>{stopRequested.current=true;setStatus('Stopping after the current company.');}}>Stop after current</button>}{!busy&&activeRun&&activeRun.processed>=activeRun.total&&activeRun.failed>0&&<button className="secondary-button" onClick={()=>void retryFailed()}>Retry failed companies ({activeRun.failed})</button>}{!busy&&pending&&<button className="secondary-button" onClick={()=>void resume()}>Resume research</button>}</div></section>
       {status&&<div className="status-banner" role="status"><span>{status}</span><button aria-label="Dismiss status" onClick={()=>setStatus(null)}><X size={14}/></button></div>}
       {activeRun&&<div className="research-progress" aria-label="Research progress"><progress max={activeRun.total||1} value={activeRun.processed}/><span>{activeRun.processed}/{activeRun.total} processed</span></div>}

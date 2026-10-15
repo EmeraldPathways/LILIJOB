@@ -23,6 +23,10 @@ const destinations = [
   ["AI assistant", "/ai"],
   ["Imports", "/imports"],
   ["Settings", "/settings"],
+  ["Ecommerce", "/sectors/ecommerce"],
+  ["Startups", "/sectors/startups"],
+  ["Tech Permits", "/sectors/tech-permits"],
+  ["Fintech", "/sectors/fintech"],
 ] as const;
 
 describe("shared workspace navigation", () => {
@@ -35,6 +39,10 @@ describe("shared workspace navigation", () => {
       ["/imports", "Imports", "/imports"],
       ["/settings", "Settings", "/settings"],
       ["/company/co-1", "Companies", "/"],
+      ["/sectors/ecommerce", "Ecommerce", "/sectors/ecommerce"],
+      ["/sectors/startups", "Startups", "/sectors/startups"],
+      ["/sectors/tech-permits", "Tech Permits", "/sectors/tech-permits"],
+      ["/sectors/fintech", "Fintech", "/sectors/fintech"],
     ] as const) {
       mockUsePathname.mockReturnValue(path);
       const html = renderToStaticMarkup(

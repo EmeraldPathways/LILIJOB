@@ -4,7 +4,9 @@ import { listCompanies, type CompanyListItem } from "../lib/repositories/company
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+export default async function Home({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}) {
+  const params=await searchParams;
+  const sector=typeof params.sector==='string'?params.sector:'All sectors';
   const user = await requireChatGPTUser("/");
   let companies: CompanyListItem[] = [];
   let loadError: string | null = null;
@@ -13,5 +15,5 @@ export default async function Home() {
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Company data could not be loaded. Reload the workspace to retry.";
   }
-  return <AppShell user={{ displayName: user.displayName, email: user.email }} initialCompanies={companies} initialError={loadError} />;
+  return <AppShell key={sector} initialSector={sector} user={{ displayName: user.displayName, email: user.email }} initialCompanies={companies} initialError={loadError} />;
 }
