@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { requireChatGPTUser } from "../chatgpt-auth";
 import { listRuns } from "../../lib/repositories/run-repository";
 import { RunTable } from "../../components/history/run-table";
@@ -10,5 +9,25 @@ export default async function HistoryPage() {
   let runs: Awaited<ReturnType<typeof listRuns>> = [];
   let loadError: string | null = null;
   try { runs = await listRuns(user.userId); } catch (error) { loadError = error instanceof Error ? error.message : "Refresh history could not be loaded."; }
-  return <main className="standalone-page"><div className="standalone-header"><Link href="/" className="mb-4 inline-block text-sm font-semibold text-blue-600">← Company workspace</Link><p className="eyebrow">Operations</p><h1 className="workspace-title">Research history</h1><p className="workspace-description">See research progress and failures. Resume unfinished company research from the workspace.</p></div>{loadError && <div className="status-banner" role="alert"><span>{loadError}</span><a className="font-semibold underline" href="/history">Retry</a></div>}<RunTable runs={runs} /></main>;
+  return (
+    <section className="workspace-frame__page">
+      <div className="standalone-header">
+        <p className="eyebrow">Operations</p>
+        <h1 className="workspace-title">Research history</h1>
+        <p className="workspace-description">
+          See research progress and failures. Resume unfinished company research
+          from the workspace.
+        </p>
+      </div>
+      {loadError && (
+        <div className="status-banner" role="alert">
+          <span>{loadError}</span>
+          <a className="font-semibold underline" href="/history">
+            Retry
+          </a>
+        </div>
+      )}
+      <RunTable runs={runs} />
+    </section>
+  );
 }

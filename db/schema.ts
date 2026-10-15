@@ -318,6 +318,71 @@ export const runConfigs = sqliteTable(
   }),
 );
 
+export const gmailConnections = sqliteTable(
+  "gmail_connections",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    googleEmail: text("google_email").notNull(),
+    encryptedAccessToken: text("encrypted_access_token").notNull(),
+    encryptedRefreshToken: text("encrypted_refresh_token"),
+    accessTokenExpiresAt: text("access_token_expires_at"),
+    ...timestamps,
+  },
+  (table) => ({
+    ownerConnection: uniqueIndex("gmail_connections_owner_idx").on(table.ownerId),
+  }),
+);
+
+export const gmailOAuthStates = sqliteTable(
+  "gmail_oauth_states",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    stateHash: text("state_hash").notNull(),
+    pkceVerifier: text("pkce_verifier").notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    consumedAt: text("consumed_at"),
+    ...timestamps,
+  },
+  (table) => ({
+    uniqueState: uniqueIndex("gmail_oauth_states_hash_idx").on(table.stateHash),
+    statesByOwnerExpiry: index("gmail_oauth_states_owner_expiry_idx").on(
+      table.ownerId,
+      table.expiresAt,
+    ),
+  }),
+);
+
+export const emailDeliveries = sqliteTable(
+  "email_deliveries",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    requestId: text("request_id").notNull(),
+    companyId: text("company_id").notNull(),
+    companyName: text("company_name").notNull(),
+    to: text("to").notNull(),
+    subject: text("subject").notNull(),
+    status: text("status").notNull(),
+    error: text("error"),
+    providerMessageId: text("provider_message_id"),
+    ...timestamps,
+  },
+  (table) => ({
+    uniqueRequestRecipient: uniqueIndex("email_deliveries_request_recipient_idx").on(
+      table.ownerId,
+      table.requestId,
+      table.companyId,
+    ),
+    historyByOwner: index("email_deliveries_owner_created_idx").on(
+      table.ownerId,
+      table.createdAt,
+    ),
+  }),
+);
+
 export const schema = {
   companies,
   companyCategories,
@@ -333,4 +398,7 @@ export const schema = {
   aiMessages,
   savedSearches,
   runConfigs,
+  gmailConnections,
+  gmailOAuthStates,
+  emailDeliveries,
 };

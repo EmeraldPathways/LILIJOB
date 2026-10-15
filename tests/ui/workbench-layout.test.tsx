@@ -6,7 +6,7 @@ const user={displayName:'Researcher',email:'researcher@example.com'};
 describe('Excel-first company workspace',()=>{
  it('starts with Sheet view and explicit research actions without starting searches',()=>{
   const html=renderToStaticMarkup(<AppShell user={user} initialCompanies={[]}/>);
-  expect(html).toContain('Dublin Tech Compass');
+
   expect(html).toContain('Sheet view');expect(html).toContain('Detailed view');
   expect(html).toContain('Research selected');expect(html).toContain('Research all in sector');
   expect(html).toContain('Import file');expect(html).toContain('Research runs only when requested');
@@ -14,8 +14,7 @@ describe('Excel-first company workspace',()=>{
  });
  it('keeps Settings and sector selection accessible on mobile',()=>{
   const html=renderToStaticMarkup(<AppShell user={user} initialCompanies={[]}/>);
-  expect(html).toContain('class="topbar-settings"');expect(html).toContain('href="/settings"');
-  expect(html).toContain('target="_top"');expect(html).toContain('aria-label="Open settings"');
+  expect(html).not.toContain('target="_top"');expect(html).not.toContain('app-sidebar');
   expect(html).toContain('aria-label="Sector"');expect(html).toContain('aria-label="Company workspace"');
  });
  it('shows all raw imported columns in an arbitrary sector without category mappings',()=>{

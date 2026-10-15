@@ -1,3 +1,9 @@
+## Shared navigation and Gmail outreach
+
+All authenticated sections render beside one persistent sidebar. Workspace contains Companies, Email and AI assistant; Manage contains Imports, Research history and Settings. Select company rows and choose Email selected, or select recipients in Email.
+
+Email sends separate messages through each user's Google account after explicit recipient review. Google OAuth credentials are required before connecting. See [Gmail setup](docs/gmail-setup.md). Tokens are encrypted in D1, sending history is owner scoped, and duplicate request IDs do not resend deliveries. The UI makes one-company requests serially and does not automatically retry uncertain sends.
+
 # Dublin Tech Compass — version2
 
 Excel is the primary source of company data. Upload a CSV or XLSX containing a company-name column and a `Sector` column. Sector values can be any label; all original columns and blank values are retained. If both Category and Sector exist, Sector drives workspace navigation.
