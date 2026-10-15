@@ -18,6 +18,10 @@ export async function GET(request: Request) {
   const locality = url.searchParams.get("locality") ?? "all";
   const query = url.searchParams.get("q") ?? undefined;
   const status = url.searchParams.get("status") ?? undefined;
+  const permitSignal = url.searchParams.get("permitSignal") ?? undefined;
+  const freshness = url.searchParams.get("freshness") ?? undefined;
+  const confidence = url.searchParams.get("confidence") ?? undefined;
+  const openRoles = url.searchParams.get("openRoles") ?? undefined;
 
   try {
     const companies = await listCompanies(user.userId, {
@@ -25,6 +29,10 @@ export async function GET(request: Request) {
       locality: locality as CompanyFilters["locality"],
       query,
       status,
+      permitSignal: permitSignal as CompanyFilters["permitSignal"],
+      freshness: freshness as CompanyFilters["freshness"],
+      confidence: confidence as CompanyFilters["confidence"],
+      openRoles: openRoles as CompanyFilters["openRoles"],
     });
     return Response.json({ companies });
   } catch (error) {

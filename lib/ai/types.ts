@@ -35,5 +35,8 @@ export type SavedCompanyContext = {
   categories?: CompanyCategory[];
   permitEvidence?: SavedPermitEvidence[];
   jobs?: Array<{ title: string; location?: string | null; url?: string | null }>;
+  contacts?: Array<{ name?: string | null; role?: string | null; email?: string | null }>;
   sources?: AgentCitation[];
+  freshness?: string;
+  confidence?: ConfidenceLevel | null;
 };

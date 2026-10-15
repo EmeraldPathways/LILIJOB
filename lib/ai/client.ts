@@ -1,6 +1,8 @@
 import { env } from "cloudflare:workers";
 
 export const DEFAULT_AI_MODEL = "gpt-5.6-luna";
+export type OpenAIReasoningEffort = "low" | "medium" | "high";
+export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 
 export class AIConfigurationError extends Error {
   readonly code = "AI_NOT_CONFIGURED";
@@ -50,6 +52,13 @@ export function configuredModel(): string {
   return env.OPENAI_MODEL?.trim() || DEFAULT_AI_MODEL;
 }
 
+export function configuredReasoningEffort(): OpenAIReasoningEffort {
+  const configured = env.OPENAI_REASONING_EFFORT?.trim().toLowerCase();
+  return configured === "low" || configured === "medium" || configured === "high"
+    ? configured
+    : DEFAULT_OPENAI_REASONING_EFFORT;
+}
+
 export function isAIConfigured(): boolean {
   return Boolean(env.OPENAI_API_KEY?.trim());
 }
@@ -63,7 +72,12 @@ export async function askOpenAI(input: string, options: { model?: string; fetchI
     response = await fetchImpl("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-      body: JSON.stringify({ model: options.model ?? configuredModel(), input, max_output_tokens: 1800 }),
+      body: JSON.stringify({
+        model: options.model ?? configuredModel(),
+        input,
+        reasoning: { effort: configuredReasoningEffort() },
+        max_output_tokens: 1800,
+      }),
       signal: AbortSignal.timeout(45_000),
     });
   } catch (error) {

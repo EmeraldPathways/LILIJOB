@@ -47,6 +47,14 @@ const aliases: Record<MappedField, string[]> = {
   foundedYear: ["founded", "founded year", "year founded"],
 };
 
+const recognizedHeaders = new Set(Object.values(aliases).flat());
+
+export function isLikelyHeaderRow(headers: string[]): boolean {
+  const normalized = headers.map(normalizeHeader).filter(Boolean);
+  const recognized = new Set(normalized.filter((header) => recognizedHeaders.has(header)));
+  return recognized.has("company") || recognized.has("company name") || recognized.has("employer") || recognized.has("organization") || recognized.has("organisation") || recognized.has("business") || (recognized.has("website") && recognized.size >= 2);
+}
+
 export function mapWorkbookColumns(headers: string[]): ColumnMapping {
   const mapping: ColumnMapping = { unknown: [] };
   const claimed = new Set<string>();

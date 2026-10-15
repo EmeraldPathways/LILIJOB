@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { HybridSearchProvider } from "./hybrid-search-provider";
 import { OpenAIWebSearchProvider } from "./openai-search-provider";
 import { classifySource } from "./source-policy";
 import { ResearchProviderError, type SearchProvider } from "./search-provider";
@@ -41,5 +42,11 @@ export class TavilySearchProvider implements SearchProvider {
 }
 
 export function configuredSearchProvider(): SearchProvider {
-  return env.SEARCH_PROVIDER === "tavily" ? new TavilySearchProvider() : new OpenAIWebSearchProvider();
+  const configured = env.SEARCH_PROVIDER?.trim().toLowerCase();
+  if (configured === "tavily") return new TavilySearchProvider();
+  if (configured === "openai") return new OpenAIWebSearchProvider();
+  // The default keeps routine enrichment on OpenAI web search and reserves
+  // Tavily for explicitly bespoke questions. SEARCH_PROVIDER remains an
+  // escape hatch for a single-provider deployment.
+  return new HybridSearchProvider(new OpenAIWebSearchProvider(), new TavilySearchProvider());
 }

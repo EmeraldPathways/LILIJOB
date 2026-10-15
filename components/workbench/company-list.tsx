@@ -14,7 +14,7 @@ export function CompanyList({ companies, selectedId, onSelect, query, onQueryCha
   filters?: CompanyListFilterState;
   onFiltersChange?: (filters: CompanyListFilterState) => void;
 }) {
-  const activeFilters = filters ?? { locality: "all", status: "all" };
+  const activeFilters = filters ?? { locality: "all", status: "all", permitSignal: "all", freshness: "all", confidence: "all", openRoles: "all" };
   return (
     <section className="flex min-h-0 flex-col border-r border-slate-200 bg-[#f7f9fb]">
       <div className="border-b border-slate-200 px-5 pb-4 pt-6">
@@ -29,7 +29,7 @@ export function CompanyList({ companies, selectedId, onSelect, query, onQueryCha
         </label>
         {onFiltersChange && <div className="mt-3"><FilterSheet filters={activeFilters} onApply={onFiltersChange} /></div>}
       </div>
-      <div className="scrollbar-thin min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+      <div className="company-list-scroll scrollbar-thin min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
         {companies.length ? companies.map((company) => <CompanyCard key={company.id} company={company} selected={company.id === selectedId} onSelect={() => onSelect(company.id)} />) : (
           <div className="empty-state m-2"><div className="empty-dot" /><p className="font-medium text-slate-700">No companies here yet</p><p className="mt-1 text-xs leading-5 text-slate-500">Import a spreadsheet or run discovery to start building your private research set.</p></div>
         )}

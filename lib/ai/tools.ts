@@ -6,6 +6,10 @@ export type AgentSearchFilters = {
   category?: CompanyCategory | "all";
   locality?: string | "all";
   status?: string | "all";
+  permitSignal?: "confirmed" | "potential" | "unknown" | "all";
+  freshness?: "fresh" | "stale" | "unknown" | "all";
+  confidence?: "high" | "medium" | "low" | "all";
+  openRoles?: "yes" | "no" | "all";
 };
 
 export type AgentRefreshScope = {
@@ -22,9 +26,12 @@ export type FindingInput = {
   source: AgentCitation;
 };
 
+export type AgentCompareInput = string[];
+
 export type AgentDependencies = {
   searchCompanies?: (ownerId: string, filters: AgentSearchFilters) => Promise<unknown>;
   getCompany?: (ownerId: string, companyId: string) => Promise<unknown>;
+  compareCompanies?: (ownerId: string, companyIds: AgentCompareInput) => Promise<unknown>;
   discover?: (ownerId: string, category: CompanyCategory) => Promise<unknown>;
   refresh?: (ownerId: string, scope: AgentRefreshScope) => Promise<unknown>;
   inspectRun?: (ownerId: string, runId: string) => Promise<unknown>;
@@ -40,6 +47,7 @@ export function createAgentTools(ownerId: string, dependencies: AgentDependencie
   return {
     searchSaved: (filters: AgentSearchFilters = {}) => dependencies.searchCompanies?.(ownerId, filters) ?? missingDependency("searchSaved"),
     getCompany: (companyId: string) => dependencies.getCompany?.(ownerId, companyId) ?? missingDependency("getCompany"),
+    compare: (companyIds: AgentCompareInput) => dependencies.compareCompanies?.(ownerId, companyIds) ?? missingDependency("compare"),
     discover: (category: CompanyCategory) => dependencies.discover?.(ownerId, category) ?? missingDependency("discover"),
     refresh: (scope: AgentRefreshScope = {}) => dependencies.refresh?.(ownerId, scope) ?? missingDependency("refresh"),
     inspectRun: (runId: string) => dependencies.inspectRun?.(ownerId, runId) ?? missingDependency("inspectRun"),

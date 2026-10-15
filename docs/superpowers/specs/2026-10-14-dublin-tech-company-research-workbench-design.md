@@ -18,7 +18,7 @@ Role matching and application workflows are deliberately deferred until the comp
 - Initial categories: Work Permit Companies, Startups, Fintech, and E-commerce.
 - A company may belong to more than one category.
 - Seed data: CSV and XLSX uploads with company names and optional details.
-- Uploads automatically begin enrichment.
+- Uploads store the source records first; enrichment is explicitly started per company from its profile.
 - Discovery searches for additional companies as well as enriching uploaded companies.
 - Fresh web searches are used by default when the AI needs current or missing information.
 - Fresh findings are saved automatically with sources and checked dates.
@@ -174,14 +174,14 @@ Stores reusable discovery or analysis queries, category, geography, search depth
 3. Header aliases are mapped to known fields. Unrecognised columns are retained as import metadata.
 4. Company names, domains, aliases, and addresses are normalized.
 5. Existing companies are matched using canonical domain, normalized name, aliases, and public Irish registration identifiers where available.
-6. New or changed records are queued for enrichment.
+6. New or changed records remain available with a not-enriched status until the user presses Enrich company.
 7. The enrichment worker plans searches for official company pages, careers pages, job sources, Irish permit sources, and credible sector/company sources.
 8. Results are extracted into structured claims and linked to source records.
 9. Claims are merged according to source quality and confidence. Conflicts are retained and flagged.
 10. Jobs, contacts, permit evidence, company categories, and change history are upserted idempotently.
 11. The dashboard updates run progress and makes partial results visible.
 
-An upload never waits for every source before showing the company. It creates the profile promptly and displays enrichment progress.
+An upload never waits for every source before showing the company. It creates the profile promptly and displays a clear not-enriched status until the user starts research.
 
 ## 9. Discovery and weekly refresh
 
@@ -202,7 +202,7 @@ Discovery must use evidence of a County Dublin office or a role explicitly locat
 
 ## 10. AI helper
 
-The AI helper uses GPT‑5.6 Luna through a server-side model adapter. The model name is configured through `OPENAI_MODEL`, defaulting to `gpt-5.6-luna`.
+The AI helper uses GPT‑5.6 Luna through a server-side model adapter. The model name is configured through `OPENAI_MODEL`, defaulting to `gpt-5.6-luna`. Responses API calls also send `reasoning.effort` from `OPENAI_REASONING_EFFORT`; unsupported values fall back to `medium`.
 
 ### Tools exposed to the agent
 

@@ -18,6 +18,7 @@ export type ParsedWorkbook = {
   fileName: string;
   headers: string[];
   rows: Record<string, string>[];
+  dataStartRow?: number;
 };
 
 export type ImportPlanRow = {

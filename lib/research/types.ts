@@ -6,7 +6,8 @@ export type SearchPurpose =
   | "open-roles"
   | "permit-evidence"
   | "dublin-locality"
-  | "category-evidence";
+  | "category-evidence"
+  | "bespoke";
 
 export type SearchRequest = {
   query: string;
@@ -53,6 +54,7 @@ export type ExtractedClaim = {
 
 export type ExistingClaim = ExtractedClaim & {
   id?: string;
+  sourceId?: string | null;
   status?: string;
   checkedAt?: string | null;
 };
@@ -89,6 +91,7 @@ export type EnrichmentSummary = {
   sourcesChecked: number;
   claimsAdded: number;
   jobsFound: number;
+  contactsFound: number;
   permitEvidenceFound: number;
   status: "completed" | "partial" | "failed";
   error?: string;

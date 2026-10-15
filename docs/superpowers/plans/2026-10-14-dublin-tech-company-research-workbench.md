@@ -15,12 +15,13 @@
 - The Site remains private and requires Sites/ChatGPT authentication.
 - Geography is County Dublin only: Dublin City, Fingal, South Dublin, and Dún Laoghaire–Rathdown.
 - Initial categories are Work Permit Companies, Startups, Fintech, and E-commerce; a company may belong to multiple categories.
-- CSV/XLSX uploads automatically begin enrichment.
+- CSV/XLSX uploads store source records first; enrichment is an explicit per-company action.
 - Fresh findings are saved automatically with source links, checked dates, confidence, and change history.
 - Existing records refresh weekly and expose a manual Refresh now action.
 - The initial weekly schedule is Sunday at 03:00 in `Europe/Dublin`.
 - Default weekly guardrails are 25 new companies per category, 6 meaningful source searches per company, and 500 existing-company refreshes.
 - The model setting `OPENAI_MODEL` defaults to `gpt-5.6-luna` and remains configurable.
+- The reasoning setting `OPENAI_REASONING_EFFORT` accepts `low`, `medium`, or `high` and defaults to `medium` to keep search spend predictable.
 - D1 stores structured data; R2 stores private uploads and exports.
 - API keys remain server-side Site secrets; no custom OAuth/session stack is introduced.
 - Permit evidence must distinguish confirmed sponsorship from potentially qualifying roles.
@@ -105,7 +106,7 @@
 **Interfaces:**
 - `requireSiteUser(returnTo?: string): Promise<SiteUser>` rejects missing identity and returns the stable Sites user ID.
 - `mapWorkbookColumns(headers: string[]): ColumnMapping` maps known aliases while retaining unknown columns.
-- `importWorkbook(file: ArrayBuffer, ownerId: string): Promise<ImportSummary>` stores the original file in R2, upserts companies, and returns row counts and queued IDs.
+- `importWorkbook(file: ArrayBuffer, ownerId: string): Promise<ImportSummary>` stores the original file in R2, upserts companies, and returns row counts and stored IDs; enrichment is started manually per company.
 - `listCompanies(ownerId: string, filters: CompanyFilters): Promise<CompanyListItem[]>` and `getCompanyDetail(ownerId: string, companyId: string): Promise<CompanyDetail>` are the read interfaces used by the dashboard and AI tools.
 - All repositories require an owner ID and never return another user's records.
 
@@ -123,7 +124,7 @@
 
 - [ ] **Step 4: Implement R2 upload storage and idempotent company upserts.**
 
-  Store each original upload under an owner-scoped key, derive canonical identity using Task 1, merge duplicate rows, create an `imports` row, and create a `refresh_runs` row for queued enrichment.
+  Store each original upload under an owner-scoped key, derive canonical identity using Task 1, merge duplicate rows, create an `imports` row, and leave the companies available for explicit per-company enrichment.
 
 - [ ] **Step 5: Implement company, import, run, and export routes.**
 
@@ -371,7 +372,7 @@
 
 - [ ] **Step 5: Configure runtime secrets.**
 
-  Configure key names through native Sites tools: `OPENAI_API_KEY`, `OPENAI_MODEL`, `SEARCH_PROVIDER`, and the fallback provider key when enabled. Keep values out of source and output.
+  Configure key names through native Sites tools: `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING_EFFORT`, `SEARCH_PROVIDER`, and the fallback provider key when enabled. Keep values out of source and output.
 
 - [ ] **Step 6: Publish as owner-private and verify deployment.**
 

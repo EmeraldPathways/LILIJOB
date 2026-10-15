@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import { COMPANY_CATEGORIES, type CompanyCategory } from "../domain/types";
-import { isExplicitlyOutsideCountyDublin, normalizeCompanyIdentity } from "../domain/normalize";
-import { mapWorkbookColumns } from "./map-columns";
+import { isCountyDublinLocation, normalizeCompanyIdentity } from "../domain/normalize";
+import { isLikelyHeaderRow, mapWorkbookColumns } from "./map-columns";
 import type {
   ImportPlan,
   ImportPlanRow,
@@ -20,15 +20,17 @@ export async function parseWorkbook(
   const bytes = file instanceof ArrayBuffer ? new Uint8Array(file) : file;
   const workbook = XLSX.read(bytes, { type: "array", raw: false, cellDates: false });
   const firstSheet = workbook.SheetNames[0];
-  if (!firstSheet) return { fileName, headers: [], rows: [] };
+  if (!firstSheet) return { fileName, headers: [], rows: [], dataStartRow: 2 };
   const sheet = workbook.Sheets[firstSheet];
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
     defval: "",
     raw: false,
   });
-  const headers = (matrix[0] ?? []).map(asText);
-  const rows = matrix.slice(1).map((values) => {
+  const headerIndex = matrix.findIndex((values) => isLikelyHeaderRow(values.map(asText)));
+  const effectiveHeaderIndex = headerIndex >= 0 ? headerIndex : 0;
+  const headers = (matrix[effectiveHeaderIndex] ?? []).map(asText);
+  const rows = matrix.slice(effectiveHeaderIndex + 1).map((values) => {
     const row: Record<string, string> = {};
     headers.forEach((header, index) => {
       if (header) row[header] = asText(values[index]);
@@ -36,7 +38,7 @@ export async function parseWorkbook(
     return row;
   });
 
-  return { fileName, headers, rows };
+  return { fileName, headers, rows, dataStartRow: effectiveHeaderIndex + 2 };
 }
 
 function get(row: Record<string, string>, header: string | undefined): string {
@@ -50,15 +52,25 @@ function categoryValue(value: string): CompanyCategory | null {
     : null;
 }
 
+function inferredCategory(fileName: string): CompanyCategory | null {
+  const normalized = fileName.toLowerCase().replace(/[^a-z0-9]+/g, " ");
+  if (/\bfintech\b/.test(normalized)) return "fintech";
+  if (/\bstartups?\b/.test(normalized)) return "startups";
+  if (/\be[ -]?commerce\b/.test(normalized)) return "e-commerce";
+  if (/\b(work[ -]?permit|sponsors?)\b/.test(normalized)) return "work-permit";
+  return null;
+}
+
 export function buildImportPlan(workbook: ParsedWorkbook): ImportPlan {
   const mapping = mapWorkbookColumns(workbook.headers);
+  const defaultCategory = inferredCategory(workbook.fileName);
   const rows: ImportPlanRow[] = [];
   const errors: ImportPlan["errors"] = [];
   const seen = new Set<string>();
   let duplicates = 0;
 
   workbook.rows.forEach((row, index) => {
-    const rowNumber = index + 2;
+    const rowNumber = (workbook.dataStartRow ?? 2) + index;
     const original = Object.fromEntries(
       Object.entries(row).map(([key, value]) => [key, asText(value)]),
     );
@@ -72,7 +84,7 @@ export function buildImportPlan(workbook: ParsedWorkbook): ImportPlan {
 
     const website = get(row, mapping.website) || null;
     const location = get(row, mapping.location) || null;
-    if (isExplicitlyOutsideCountyDublin(location)) {
+    if (location && !isCountyDublinLocation(location)) {
       errors.push({ row: rowNumber, message: "Location is outside County Dublin" });
       return;
     }
@@ -99,7 +111,7 @@ export function buildImportPlan(workbook: ParsedWorkbook): ImportPlan {
       companyName,
       website,
       aliases,
-      category: categoryValue(get(row, mapping.category)),
+      category: categoryValue(get(row, mapping.category)) ?? defaultCategory,
       location,
       careersUrl: get(row, mapping.careersUrl) || null,
       description: get(row, mapping.description) || null,

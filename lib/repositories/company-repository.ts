@@ -10,13 +10,18 @@ import {
   permitEvidence,
   sources,
 } from "../../db/schema";
-import type { CompanyCategory, DublinLocality } from "../domain/types";
+import type { CompanyCategory, ConfidenceLevel, DublinLocality } from "../domain/types";
+import { groupRowsByCompanyId } from "./company-relations";
 
 export type CompanyFilters = {
   category?: CompanyCategory | "all";
   locality?: DublinLocality | "all";
   query?: string;
   status?: string;
+  permitSignal?: CompanyListItem["permitSignal"] | "all";
+  freshness?: "fresh" | "stale" | "unknown" | "all";
+  confidence?: ConfidenceLevel | "all";
+  openRoles?: "yes" | "no" | "all";
 };
 
 export type CompanyListItem = {
@@ -33,6 +38,9 @@ export type CompanyListItem = {
   nextRefreshAt: string | null;
   employeeBand: string | null;
   permitSignal: "confirmed" | "potential" | "unknown";
+  openRoles: number;
+  confidence: ConfidenceLevel | null;
+  freshness: "fresh" | "stale" | "unknown";
 };
 
 export type CompanyDetail = CompanyListItem & {
@@ -63,6 +71,20 @@ function permitSignal(evidence: Array<{ evidenceType: string }>): CompanyListIte
   return "unknown";
 }
 
+function freshness(lastEnrichedAt: string | null): CompanyListItem["freshness"] {
+  if (!lastEnrichedAt) return "unknown";
+  const timestamp = Date.parse(lastEnrichedAt);
+  if (Number.isNaN(timestamp)) return "unknown";
+  return Date.now() - timestamp <= 30 * 24 * 60 * 60 * 1000 ? "fresh" : "stale";
+}
+
+function strongestConfidence(values: string[]): ConfidenceLevel | null {
+  if (values.includes("high")) return "high";
+  if (values.includes("medium")) return "medium";
+  if (values.includes("low")) return "low";
+  return null;
+}
+
 async function categoriesFor(ownerId: string, companyId: string): Promise<CompanyCategory[]> {
   const db = getDb();
   const rows = await db
@@ -70,14 +92,6 @@ async function categoriesFor(ownerId: string, companyId: string): Promise<Compan
     .from(companyCategories)
     .where(and(eq(companyCategories.ownerId, ownerId), eq(companyCategories.companyId, companyId)));
   return rows.map((row) => row.category as CompanyCategory);
-}
-
-async function evidenceFor(ownerId: string, companyId: string) {
-  const db = getDb();
-  return db
-    .select({ evidenceType: permitEvidence.evidenceType })
-    .from(permitEvidence)
-    .where(and(eq(permitEvidence.ownerId, ownerId), eq(permitEvidence.companyId, companyId)));
 }
 
 export async function listCompanies(
@@ -102,13 +116,45 @@ export async function listCompanies(
     .where(and(...clauses))
     .orderBy(asc(companies.name));
 
+  const [categoryRows, evidenceRows, jobRows, claimRows] = await Promise.all([
+    db
+      .select({ companyId: companyCategories.companyId, category: companyCategories.category })
+      .from(companyCategories)
+      .where(eq(companyCategories.ownerId, ownerId)),
+    db
+      .select({ companyId: permitEvidence.companyId, evidenceType: permitEvidence.evidenceType })
+      .from(permitEvidence)
+      .where(eq(permitEvidence.ownerId, ownerId)),
+    db
+      .select({ companyId: jobs.companyId, status: jobs.status })
+      .from(jobs)
+      .where(eq(jobs.ownerId, ownerId)),
+    db
+      .select({ companyId: companyClaims.companyId, confidence: companyClaims.confidence, status: companyClaims.status })
+      .from(companyClaims)
+      .where(eq(companyClaims.ownerId, ownerId)),
+  ]);
+  const categoriesByCompany = groupRowsByCompanyId(categoryRows);
+  const evidenceByCompany = groupRowsByCompanyId(evidenceRows);
+  const jobsByCompany = groupRowsByCompanyId(jobRows);
+  const claimsByCompany = groupRowsByCompanyId(claimRows);
+
   const result: CompanyListItem[] = [];
   for (const row of rows) {
-    const categories = await categoriesFor(ownerId, row.id);
+    const categories = (categoriesByCompany.get(row.id) ?? []).map((item) => item.category as CompanyCategory);
     if (filters.category && filters.category !== "all" && !categories.includes(filters.category)) {
       continue;
     }
-    const evidence = await evidenceFor(ownerId, row.id);
+    const evidence = evidenceByCompany.get(row.id) ?? [];
+    const signal = permitSignal(evidence);
+    const openRoles = (jobsByCompany.get(row.id) ?? []).filter((job) => job.status !== "closed").length;
+    const confidence = strongestConfidence((claimsByCompany.get(row.id) ?? []).filter((claim) => claim.status === "current").map((claim) => claim.confidence));
+    const rowFreshness = freshness(row.lastEnrichedAt);
+    if (filters.permitSignal && filters.permitSignal !== "all" && signal !== filters.permitSignal) continue;
+    if (filters.freshness && filters.freshness !== "all" && rowFreshness !== filters.freshness) continue;
+    if (filters.confidence && filters.confidence !== "all" && confidence !== filters.confidence) continue;
+    if (filters.openRoles === "yes" && openRoles === 0) continue;
+    if (filters.openRoles === "no" && openRoles > 0) continue;
     result.push({
       id: row.id,
       name: row.name,
@@ -122,7 +168,10 @@ export async function listCompanies(
       lastEnrichedAt: row.lastEnrichedAt,
       nextRefreshAt: row.nextRefreshAt,
       employeeBand: row.employeeBand,
-      permitSignal: permitSignal(evidence),
+      permitSignal: signal,
+      openRoles,
+      confidence,
+      freshness: rowFreshness,
     });
   }
   return result;
@@ -162,6 +211,9 @@ export async function getCompanyDetail(ownerId: string, companyId: string): Prom
     nextRefreshAt: row.nextRefreshAt,
     employeeBand: row.employeeBand,
     permitSignal: permitSignal(permitRows),
+    openRoles: jobsRows.filter((job) => job.status !== "closed").length,
+    confidence: strongestConfidence(claimRows.filter((claim) => claim.status === "current").map((claim) => claim.confidence)),
+    freshness: freshness(row.lastEnrichedAt),
     aliases: parseJson(row.aliasesJson, []),
     headquarters: row.headquarters,
     foundedYear: row.foundedYear,

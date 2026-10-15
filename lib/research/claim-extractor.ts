@@ -24,6 +24,23 @@ function sourceFor(result: SearchResult) {
   };
 }
 
+function extractJobTitle(result: SearchResult, content: string): string | null {
+  const titleCandidate = result.title.split(/\s*[|·–—-]\s*/)[0]?.trim();
+  if (titleCandidate && !/^(careers?|jobs?|vacancies?|hiring|open roles?)$/i.test(titleCandidate) && /\b(engineer|developer|manager|designer|analyst|lead|director|specialist|architect|scientist|consultant|recruit)/i.test(titleCandidate)) {
+    return titleCandidate;
+  }
+  const contentMatch = content.match(/(?:hiring|open role(?:s)?|vacanc(?:y|ies)|position)\s+(?:for\s+)?(?:an?\s+|the\s+)?([A-Z][A-Za-z0-9/&+ .-]{3,80}?)(?:\s+in\s+|\.|,|$)/i);
+  return contentMatch?.[1]?.trim() || null;
+}
+
+function extractContact(content: string): { name: string | null; role: string | null; email: string } | null {
+  const email = content.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase();
+  if (!email) return null;
+  const name = content.match(/(?:contact|speak to|reach)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})/)?.[1] ?? null;
+  const role = /\b(talent|recruit(?:ing|er)?|people|hiring|hr)\b/i.test(content) ? "Recruiting contact" : null;
+  return { name, role, email };
+}
+
 export async function extractClaims(
   _company: ResearchCompanySeed,
   results: SearchResult[],
@@ -43,6 +60,7 @@ export async function extractClaims(
           ? "potentially-qualifying-role"
           : "not-found";
       claims.push({ field: "permitEvidence", value: { evidenceType, statement: excerpt }, normalizedValue: `${evidenceType}:${normalized(excerpt)}`, confidence, source, excerpt });
+      claims.push({ field: "category", value: "work-permit", normalizedValue: "work-permit", confidence, source, excerpt });
     }
 
     const locality = normalizeDublinLocality(content);
@@ -64,6 +82,27 @@ export async function extractClaims(
 
     if (/\b(careers?|jobs?|vacanc(?:y|ies)|hiring|open roles?)\b/i.test(result.title + content)) {
       claims.push({ field: "careersUrl", value: result.url, normalizedValue: result.url.toLowerCase(), confidence, source, excerpt });
+    }
+
+    if (result.sourceType === "job-board" || /\b(hiring|open roles?|vacanc(?:y|ies))\b/i.test(result.title + content)) {
+      const title = extractJobTitle(result, content);
+      if (title) {
+        claims.push({
+          field: "job",
+          value: { title, url: result.url, location: normalizeDublinLocality(content) ?? "Dublin" },
+          normalizedValue: `${normalized(title)}:${result.url.toLowerCase()}`,
+          confidence,
+          source,
+          excerpt,
+        });
+      }
+    }
+
+    if (source.sourceType === "official-company" || source.sourceType === "official-careers") {
+      const contact = extractContact(content);
+      if (contact) {
+        claims.push({ field: "contact", value: contact, normalizedValue: contact.email, confidence, source, excerpt });
+      }
     }
 
     if (source.sourceType === "official-company" && content.length > 80) {

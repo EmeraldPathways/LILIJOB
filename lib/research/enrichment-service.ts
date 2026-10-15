@@ -5,6 +5,7 @@ import { mergeClaims } from "./claim-merger";
 import type { ExistingClaim, EnrichmentSummary, ResearchCompanySeed, SearchResult } from "./types";
 import type { SearchProvider } from "./search-provider";
 import { ResearchProviderError } from "./search-provider";
+import { COMPANY_CATEGORIES, type CompanyCategory } from "../domain/types";
 
 export type RetryOptions = { retries?: number; baseDelayMs?: number };
 
@@ -65,7 +66,7 @@ export async function enrichCompany(
     .where(and(eq(schema.companies.ownerId, ownerId), eq(schema.companies.id, companyId)))
     .limit(1);
   if (!company) {
-    return { companyId, runId, sourcesChecked: 0, claimsAdded: 0, jobsFound: 0, permitEvidenceFound: 0, status: "failed", error: "Company not found." };
+    return { companyId, runId, sourcesChecked: 0, claimsAdded: 0, jobsFound: 0, contactsFound: 0, permitEvidenceFound: 0, status: "failed", error: "Company not found." };
   }
 
   const now = new Date().toISOString();
@@ -95,12 +96,16 @@ export async function enrichCompany(
     source: { url: "", title: "Stored claim", sourceType: "search", provider: "stored", retrievedAt: row.checkedAt ?? row.updatedAt, hasFullContent: false },
     excerpt: "",
     id: row.id,
+    sourceId: row.sourceId,
     status: row.status,
     checkedAt: row.checkedAt,
   }));
   const merged = mergeClaims(existing, claims, runId);
 
   let claimsAdded = 0;
+  let jobsFound = 0;
+  let contactsFound = 0;
+  const sourceIds = new Map<string, string>();
   for (const result of ranked) {
     const normalizedUrl = result.url.toLowerCase().replace(/#.*$/, "").replace(/\/$/, "");
     await db.insert(schema.sources).values({
@@ -108,15 +113,34 @@ export async function enrichCompany(
       provider: result.provider, sourceType: result.sourceType ?? "search", retrievedAt: result.retrievedAt, checkedAt: now,
       status: result.status ?? "ok", createdAt: now, updatedAt: now,
     }).onConflictDoUpdate({ target: [schema.sources.ownerId, schema.sources.normalizedUrl], set: { checkedAt: now, snippet: result.snippet, updatedAt: now } });
+    const [sourceRow] = await db.select({ id: schema.sources.id }).from(schema.sources).where(and(eq(schema.sources.ownerId, ownerId), eq(schema.sources.normalizedUrl, normalizedUrl))).limit(1);
+    if (sourceRow) sourceIds.set(normalizedUrl, sourceRow.id);
+  }
+
+  const currentClaimIds = new Set(merged.current.map((claim) => claim.id).filter((value): value is string => Boolean(value)));
+  for (const previous of existing) {
+    if (previous.id && !currentClaimIds.has(previous.id)) {
+      await db.update(schema.companyClaims).set({ status: "superseded", updatedAt: now }).where(and(eq(schema.companyClaims.ownerId, ownerId), eq(schema.companyClaims.id, previous.id)));
+    }
   }
 
   for (const claim of merged.current) {
-    const sourceId = id("src");
-    await db.insert(schema.companyClaims).values({
-      id: id("claim"), ownerId, companyId, field: claim.field, valueJson: JSON.stringify(claim.value), normalizedValue: claim.normalizedValue,
-      confidence: claim.confidence, sourceId, status: "current", checkedAt: now, createdAt: now, updatedAt: now,
-    });
-    claimsAdded += 1;
+    const normalizedUrl = claim.source.url.toLowerCase().replace(/#.*$/, "").replace(/\/$/, "");
+    const sourceId = claim.sourceId ?? sourceIds.get(normalizedUrl) ?? null;
+    if (claim.id) {
+      await db.update(schema.companyClaims).set({ valueJson: JSON.stringify(claim.value), normalizedValue: claim.normalizedValue, confidence: claim.confidence, sourceId, status: "current", checkedAt: now, updatedAt: now }).where(and(eq(schema.companyClaims.ownerId, ownerId), eq(schema.companyClaims.id, claim.id)));
+      continue;
+    }
+    const [stored] = await db.select({ id: schema.companyClaims.id }).from(schema.companyClaims).where(and(eq(schema.companyClaims.ownerId, ownerId), eq(schema.companyClaims.companyId, companyId), eq(schema.companyClaims.field, claim.field), eq(schema.companyClaims.normalizedValue, claim.normalizedValue), eq(schema.companyClaims.status, "current"))).limit(1);
+    if (stored) {
+      await db.update(schema.companyClaims).set({ valueJson: JSON.stringify(claim.value), confidence: claim.confidence, sourceId, checkedAt: now, updatedAt: now }).where(and(eq(schema.companyClaims.ownerId, ownerId), eq(schema.companyClaims.id, stored.id)));
+    } else {
+      await db.insert(schema.companyClaims).values({
+        id: id("claim"), ownerId, companyId, field: claim.field, valueJson: JSON.stringify(claim.value), normalizedValue: claim.normalizedValue,
+        confidence: claim.confidence, sourceId, status: "current", checkedAt: now, createdAt: now, updatedAt: now,
+      });
+      claimsAdded += 1;
+    }
   }
   for (const change of merged.changes) {
     await db.insert(schema.changeHistory).values({
@@ -127,10 +151,57 @@ export async function enrichCompany(
   for (const claim of merged.current.filter((item) => item.field === "permitEvidence")) {
     const value = claim.value as { evidenceType?: string; statement?: string };
     if (!value.evidenceType || !value.statement) continue;
-    await db.insert(schema.permitEvidence).values({
-      id: id("permit"), ownerId, companyId, evidenceType: value.evidenceType, statement: value.statement, excerpt: claim.excerpt,
-      confidence: claim.confidence, checkedAt: now, createdAt: now, updatedAt: now,
-    });
+    const sourceId = sourceIds.get(claim.source.url.toLowerCase().replace(/#.*$/, "").replace(/\/$/, "")) ?? null;
+    const [stored] = await db.select({ id: schema.permitEvidence.id }).from(schema.permitEvidence).where(and(eq(schema.permitEvidence.ownerId, ownerId), eq(schema.permitEvidence.companyId, companyId), eq(schema.permitEvidence.evidenceType, value.evidenceType), eq(schema.permitEvidence.statement, value.statement))).limit(1);
+    if (stored) {
+      await db.update(schema.permitEvidence).set({ excerpt: claim.excerpt, sourceId, confidence: claim.confidence, checkedAt: now, updatedAt: now }).where(and(eq(schema.permitEvidence.ownerId, ownerId), eq(schema.permitEvidence.id, stored.id)));
+    } else {
+      await db.insert(schema.permitEvidence).values({
+        id: id("permit"), ownerId, companyId, evidenceType: value.evidenceType, statement: value.statement, excerpt: claim.excerpt,
+        sourceId, confidence: claim.confidence, checkedAt: now, createdAt: now, updatedAt: now,
+      });
+    }
+  }
+
+  for (const claim of merged.current.filter((item) => item.field === "category")) {
+    const category = typeof claim.value === "string" && (COMPANY_CATEGORIES as readonly string[]).includes(claim.value) ? claim.value as CompanyCategory : null;
+    if (!category) continue;
+    await db.insert(schema.companyCategories).values({ id: id("cat"), ownerId, companyId, category, confidence: claim.confidence, sourceId: sourceIds.get(claim.source.url.toLowerCase().replace(/#.*$/, "").replace(/\/$/, "")) ?? null, createdAt: now, updatedAt: now }).onConflictDoNothing();
+  }
+
+  for (const claim of merged.current.filter((item) => item.field === "job")) {
+    const value = claim.value as { title?: string; url?: string | null; location?: string | null; employmentType?: string | null; salary?: string | null; postedAt?: string | null };
+    if (!value.title) continue;
+    const normalizedJobUrl = value.url?.toLowerCase().replace(/#.*$/, "").replace(/\/$/, "") ?? null;
+    const existingJobs = await db.select().from(schema.jobs).where(and(eq(schema.jobs.ownerId, ownerId), eq(schema.jobs.companyId, companyId)));
+    const stored = existingJobs.find((job) => job.title.trim().toLowerCase() === value.title!.trim().toLowerCase() && (job.url?.toLowerCase().replace(/#.*$/, "").replace(/\/$/, "") ?? null) === normalizedJobUrl);
+    const sourceId = sourceIds.get(claim.source.url.toLowerCase().replace(/#.*$/, "").replace(/\/$/, "")) ?? null;
+    if (stored) {
+      await db.update(schema.jobs).set({ location: value.location ?? stored.location, employmentType: value.employmentType ?? stored.employmentType, salary: value.salary ?? stored.salary, postedAt: value.postedAt ?? stored.postedAt, sourceId, confidence: claim.confidence, status: "open", updatedAt: now }).where(and(eq(schema.jobs.ownerId, ownerId), eq(schema.jobs.id, stored.id)));
+    } else {
+      await db.insert(schema.jobs).values({ id: id("job"), ownerId, companyId, title: value.title, url: value.url ?? null, location: value.location ?? null, employmentType: value.employmentType ?? null, salary: value.salary ?? null, postedAt: value.postedAt ?? null, sourceId, confidence: claim.confidence, status: "open", createdAt: now, updatedAt: now }).onConflictDoNothing();
+    }
+    jobsFound += 1;
+  }
+
+  for (const claim of merged.current.filter((item) => item.field === "contact")) {
+    const value = claim.value as { name?: string | null; role?: string | null; email?: string | null; linkedinUrl?: string | null };
+    if (!value.email && !value.name) continue;
+    const existingContacts = await db.select().from(schema.contacts).where(and(eq(schema.contacts.ownerId, ownerId), eq(schema.contacts.companyId, companyId)));
+    const stored = existingContacts.find((contact) => (value.email && contact.email?.toLowerCase() === value.email.toLowerCase()) || (!value.email && value.name && contact.name?.toLowerCase() === value.name.toLowerCase()));
+    const sourceId = sourceIds.get(claim.source.url.toLowerCase().replace(/#.*$/, "").replace(/\/$/, "")) ?? null;
+    if (stored) {
+      await db.update(schema.contacts).set({ name: value.name ?? stored.name, role: value.role ?? stored.role, linkedinUrl: value.linkedinUrl ?? stored.linkedinUrl, sourceId, confidence: claim.confidence, updatedAt: now }).where(and(eq(schema.contacts.ownerId, ownerId), eq(schema.contacts.id, stored.id)));
+    } else {
+      await db.insert(schema.contacts).values({ id: id("contact"), ownerId, companyId, name: value.name ?? null, role: value.role ?? null, email: value.email ?? null, linkedinUrl: value.linkedinUrl ?? null, sourceId, confidence: claim.confidence, createdAt: now, updatedAt: now });
+    }
+    contactsFound += 1;
+  }
+
+  const description = merged.current.find((claim) => claim.field === "description")?.value;
+  const locality = merged.current.find((claim) => claim.field === "locality")?.value;
+  if (typeof description === "string" || typeof locality === "string") {
+    await db.update(schema.companies).set({ description: typeof description === "string" ? description : company.description, locality: typeof locality === "string" ? locality : company.locality, updatedAt: now }).where(and(eq(schema.companies.ownerId, ownerId), eq(schema.companies.id, companyId)));
   }
 
   const status: EnrichmentSummary["status"] = failures === 0 ? "completed" : ranked.length ? "partial" : "failed";
@@ -138,7 +209,7 @@ export async function enrichCompany(
   await db.update(schema.refreshRuns).set({ status, processed: requests.length, succeeded: requests.length - failures, failed: failures, finishedAt: now, updatedAt: now, error: error ?? null }).where(and(eq(schema.refreshRuns.ownerId, ownerId), eq(schema.refreshRuns.id, runId)));
   await db.update(schema.companies).set({ enrichmentStatus: status, lastEnrichedAt: now, updatedAt: now }).where(and(eq(schema.companies.ownerId, ownerId), eq(schema.companies.id, companyId)));
 
-  return { companyId, runId, sourcesChecked: ranked.length, claimsAdded, jobsFound: 0, permitEvidenceFound: merged.current.filter((claim) => claim.field === "permitEvidence").length, status, error };
+  return { companyId, runId, sourcesChecked: ranked.length, claimsAdded, jobsFound, contactsFound, permitEvidenceFound: merged.current.filter((claim) => claim.field === "permitEvidence").length, status, error };
 }
 
 export async function createRun(ownerId: string, kind: string, companyId?: string, category?: string): Promise<string> {

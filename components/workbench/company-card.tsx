@@ -17,7 +17,7 @@ export function CompanyCard({ company, selected, onSelect }: { company: CompanyL
         <EnrichmentBadge status={company.enrichmentStatus} />
         <PermitBadge signal={company.permitSignal} />
       </div>
-      {company.categories.length > 0 && <p className="mt-3 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400">{company.categories.join(" · ")}</p>}
+      <div className="mt-3 flex flex-wrap gap-2 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400"><span>{company.openRoles ? `${company.openRoles} open role${company.openRoles === 1 ? "" : "s"}` : "No roles captured"}</span>{company.freshness === "stale" && <span className="text-amber-600">Needs refresh</span>}{company.categories.length > 0 && <span>{company.categories.join(" · ")}</span>}</div>
     </button>
   );
 }

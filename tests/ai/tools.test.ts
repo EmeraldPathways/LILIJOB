@@ -25,4 +25,15 @@ describe("AI tool boundary", () => {
     expect(refresh).toHaveBeenCalledWith("owner-1", { category: "fintech" });
     expect(discover).toHaveBeenCalledWith("owner-1", "startups");
   });
+
+  it("exposes owner-scoped comparison and export operations", async () => {
+    const compareCompanies = vi.fn().mockResolvedValue([{ id: "co-1" }, { id: "co-2" }]);
+    const exportRecords = vi.fn().mockResolvedValue([{ id: "co-1" }]);
+    const tools = createAgentTools("owner-1", { compareCompanies, exportRecords });
+
+    await expect(tools.compare(["co-1", "co-2"])).resolves.toHaveLength(2);
+    await expect(tools.exportRecords({ freshness: "stale" })).resolves.toEqual([{ id: "co-1" }]);
+    expect(compareCompanies).toHaveBeenCalledWith("owner-1", ["co-1", "co-2"]);
+    expect(exportRecords).toHaveBeenCalledWith("owner-1", { freshness: "stale" });
+  });
 });

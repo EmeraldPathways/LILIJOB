@@ -1,6 +1,9 @@
 import { CheckCircle2, CircleAlert, Clock3, ShieldCheck } from "lucide-react";
 
 export function EnrichmentBadge({ status }: { status: string }) {
+  if (status === "not-enriched") {
+    return <span className="badge badge-muted"><CircleAlert size={13} /> Not enriched</span>;
+  }
   if (status === "completed") {
     return <span className="badge badge-green"><CheckCircle2 size={13} /> Fresh</span>;
   }
