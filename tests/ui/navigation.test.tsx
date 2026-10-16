@@ -23,11 +23,21 @@ const destinations = [
   ["AI assistant", "/ai"],
   ["Imports", "/imports"],
   ["Settings", "/settings"],
+  ["Recruitment Contacts", "/contacts"],
   ["Ecommerce", "/sectors/ecommerce"],
   ["Startups", "/sectors/startups"],
   ["Tech Permits", "/sectors/tech-permits"],
   ["Fintech", "/sectors/fintech"],
+] as const;
+
+const hiddenDestinations = [
+  ["Opportunities", "/opportunities"],
+  ["Sector Pitches", "/pitches"],
+  ["Interviews", "/interviews"],
+  ["AI Job Hunt Agent", "/agent"],
+  ["Hiring Signals", "/signals"],
   ["Permit reality", "/permit"],
+  ["Analytics", "/analytics"],
 ] as const;
 
 describe("shared workspace navigation", () => {
@@ -44,7 +54,6 @@ describe("shared workspace navigation", () => {
       ["/sectors/startups", "Startups", "/sectors/startups"],
       ["/sectors/tech-permits", "Tech Permits", "/sectors/tech-permits"],
       ["/sectors/fintech", "Fintech", "/sectors/fintech"],
-      ["/permit", "Permit reality", "/permit"],
     ] as const) {
       mockUsePathname.mockReturnValue(path);
       const html = renderToStaticMarkup(
@@ -55,7 +64,7 @@ describe("shared workspace navigation", () => {
 
       expect(html).toContain('aria-label="Workspace"');
       expect(html).toContain('aria-label="Manage"');
-      expect(html).toContain('aria-label="Intelligence"');
+      expect(html).not.toContain('aria-label="Intelligence"');
       expect(html).toContain(activeLabel);
       const activeLink = html.match(
         /<a\b(?=[^>]*aria-current="page")[^>]*>/,
@@ -71,13 +80,10 @@ describe("shared workspace navigation", () => {
       expect(workspaceGroup).toContain('href="/"');
       expect(workspaceGroup).toContain('href="/email"');
       expect(workspaceGroup).toContain('href="/ai"');
+      expect(workspaceGroup).toContain('href="/contacts"');
       expect(manageGroup).toContain('href="/imports"');
       expect(manageGroup).toContain('href="/history"');
       expect(manageGroup).toContain('href="/settings"');
-      const intelligenceGroup = html.match(
-        /<nav\b(?=[^>]*aria-label="Intelligence")[^>]*>([\s\S]*?)<\/nav>/,
-      )?.[1];
-      expect(intelligenceGroup).toContain('href="/permit"');
 
       for (const [, href] of destinations) {
         const link = html.match(
@@ -85,6 +91,9 @@ describe("shared workspace navigation", () => {
         )?.[0];
         expect(link, `${path} should include ${href}`).toBeTruthy();
         expect(link).not.toContain('target="_top"');
+      }
+      for (const [, href] of hiddenDestinations) {
+        expect(html).not.toContain(`href="${href}"`);
       }
     }
   });
