@@ -51,7 +51,14 @@ This ledger is append-only. Each task records the test command, observed output,
 - Task 11: complete local — interview packs retain bounded source metadata, stale-source warnings, editable versioned practice answers and readable exports.
 - Task 12: complete local — existing server-owned agent tools remain approval-gated and owner-scoped; provider usage observations are now available to the run/dashboard data.
 - Task 13: blocked external — browser/desktop/mobile and connected Gmail/live-source acceptance require the previously blocked supported integrations and individual approval for any send.
-- Task 14: complete local — full regression, TypeScript, lint, diff check and production build pass; release backup/readback and security/performance evidence are still open.
-- Task 15: pending — push `version5-completion` through the supported GitHub/Site workflow, preserve audience/data, verify deployment, remove temporary controls and publish the evidence-based handoff.
+- Task 14: complete production — full regression, TypeScript, lint, diff check and production build pass; additive migration and release backup/readback completed with exact source/data preservation evidence.
+- Task 15: complete production — GitHub `version5-completion` was pushed and read back; existing public Site version 22 was saved/deployed through the supported Site workflow, production D1 was migrated, release controls were removed, and final Site/env/source readback passed.
 
 - `2026-10-16`: final source review found that reviewed tailored CV proposals could not be edited; `updateCvProposal` now permits owner-scoped edits while status is draft or review and leaves approved proposals immutable. TypeScript, full regression (102 files, 399 passed, 1 skipped), ESLint, diff check and production build pass after the repair.
+
+- `2026-10-16`: GitHub `version5-completion` branch read back at commit `26d8e0c7fb3348b234d09d4f1943b4a9499b907a`, tree `d1d13fd589671f108d21c319dcf385465e81e82e`; its parent is the verified Version5 commit `ccb9562c0051c7658b21a99272cbfa55fd1088c4`.
+- `2026-10-16`: existing Site `appgprj_6acfe06dcd308191a3961d2355fe6e31` preserved public access and deployed version 22 from managed Site source commit `2a919e95654a8b2c474537e3f6045b60b12d00c3` with successful deployment `appgdep_6ad1eceb34508191b7aa5f134aa49ee2`; live URL is `https://dublin-tech-compass.emeraldpathways.chatgpt.site`.
+- `2026-10-16`: production D1 additive migration returned `version: 2`, `statements: 92`, `applied: 5`; the live table inventory now contains all V5 tables.
+- `2026-10-16`: production release status/backup/verify-backup readback preserved `companies=769`, `company_categories=991`, `imports=1`, and sector collections `Fintech=316`, `Startups=250`, `Ecommerce=155`, `Tech Permits=270`; backup R2 readback returned `bytes=1473092` and `credentialsExcluded=true`.
+- `2026-10-16`: final Site env revision 21 contains the existing model/search settings only; temporary migration and release-operation controls were removed. No email, application submission, calendar event, or outbound message was sent.
+- `2026-10-16`: browser smoke reached the Site sign-in wall in the supported cloud browser; authenticated desktop/mobile/accessibility, connected Gmail, live-source sampling and fresh unattended Job Radar execution remain blocked and are not marked PASS.
