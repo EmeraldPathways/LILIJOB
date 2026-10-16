@@ -91,9 +91,9 @@ export function buildApplicationPack(input: {
   const proof = used.map((item) => `${item.statement.trim()}${item.metric ? ` (${item.metric.trim()})` : ""}`);
   const requirementGaps = recommendedEdits.filter((edit) => !edit.evidenceId).map((edit) => edit.requirement);
   const tailoredSummary = compact(`${input.candidateSummary.trim()} Relevant approved evidence: ${proof.join(" ")}`, 70);
-  const coverNote = compact(`I am applying for the ${input.jobTitle} role at ${input.companyName}. My background includes ${proof.join(" ") || "approved experience relevant to the role"}. I would welcome a conversation about the published requirements and the areas where I would need to learn more.`, 180);
-  const recruiterEmail = compact(`Subject: ${input.jobTitle} at ${input.companyName}\n\nHello, I am interested in the ${input.jobTitle} opportunity. My approved experience includes ${proof.join(" ") || "relevant product experience"}. I have included the role source for review and would be glad to discuss the requirements and any open questions.`, 120);
-  const linkedinMessage = compact(`Hello, I am exploring the ${input.jobTitle} role at ${input.companyName}. My relevant approved experience includes ${proof[0] ?? "product delivery and cross-functional work"}. I would value a brief conversation if appropriate.`, 60);
+  const coverNote = compact(`I am applying for the ${input.jobTitle} role at ${input.companyName}. ${proof.length ? `My background includes ${proof.join(" ")}.` : "[Add approved relevant experience before sending.]"} I would welcome a conversation about the published requirements and the areas where I would need to learn more.`, 180);
+  const recruiterEmail = compact(`Subject: ${input.jobTitle} at ${input.companyName}\n\nHello, I am interested in the ${input.jobTitle} opportunity. ${proof.length ? `My approved experience includes ${proof.join(" ")}.` : "[Add approved relevant experience before sending.]"} I have included the role source for review and would be glad to discuss the requirements and any open questions.`, 120);
+  const linkedinMessage = compact(`Hello, I am exploring the ${input.jobTitle} role at ${input.companyName}. ${proof.length ? `My relevant approved experience includes ${proof[0]}.` : "[Add approved relevant experience before sending.]"} I would value a brief conversation if appropriate.`, 60);
   return {
     jobTitle: input.jobTitle,
     companyName: input.companyName,

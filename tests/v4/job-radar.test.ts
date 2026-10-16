@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { discoverOfficialCareerPage, parseCareerFeed, parseCareerPage, isSafePublicUrl } from "../../lib/v4/job-radar";
+import { candidateRoleUrlsFromCareerPage, discoverOfficialCareerPage, parseCareerFeed, parseCareerPage, isSafePublicUrl } from "../../lib/v4/job-radar";
 
 const fixture = `
 <script type="application/ld+json">
@@ -19,6 +19,47 @@ describe("Version 4 job radar", () => {
     const result = parseCareerPage('<a href="/careers/product-manager">Product Manager</a>', "https://acme.test", "2026-10-15T12:00:00.000Z");
     expect(result.status).toBe("partial");
     expect(result.jobs[0]).toMatchObject({ title: "Product Manager", verified: false, postedAt: null });
+  });
+
+  it("selects at most three explicit role links and excludes generic site navigation", () => {
+    const html = `<a href="/careers">Careers</a><a href="/about">About</a><a href="/jobs/product-manager">Product Manager</a><a href="/jobs/security-engineer">Security Engineer</a><a href="/roles/growth-manager">Growth Manager</a><a href="/jobs/extra-analyst">Data Analyst</a><a href="/partners">Partners</a>`;
+    expect(candidateRoleUrlsFromCareerPage(html, "https://acme.test/careers", 3)).toEqual([
+      "https://acme.test/jobs/product-manager",
+      "https://acme.test/jobs/security-engineer",
+      "https://acme.test/roles/growth-manager",
+    ]);
+  });
+
+  it("verifies only fetched detail pages with JobPosting data and keeps sampled coverage partial", async () => {
+    const page = `<a href="/jobs/product-manager">Product Manager</a><a href="/jobs/security-engineer">Security Engineer</a><a href="/jobs/data-analyst">Data Analyst</a><a href="/jobs/marketing-analyst">Marketing Analyst</a><a href="/about">About</a>`;
+    const posting = `<script type="application/ld+json">{"@type":"JobPosting","title":"Product Manager","url":"https://acme.test/jobs/product-manager","description":"Own the roadmap."}</script>`;
+    const urls: string[] = [];
+    const result = await discoverOfficialCareerPage("https://acme.test/careers", async (input) => {
+      urls.push(input);
+      if (input === "https://acme.test/careers") return new Response(page, { headers: { "content-type": "text/html" } });
+      if (input.endsWith("product-manager")) return new Response(posting, { headers: { "content-type": "text/html" } });
+      return new Response("<main>Role details</main>", { headers: { "content-type": "text/html" } });
+    });
+    expect(urls).toHaveLength(4);
+    expect(urls.slice(1)).toEqual([
+      "https://acme.test/jobs/product-manager",
+      "https://acme.test/jobs/security-engineer",
+      "https://acme.test/jobs/data-analyst",
+    ]);
+    expect(result.status).toBe("partial");
+    expect(result.jobs.some((job) => job.title === "Product Manager" && job.verified)).toBe(true);
+    expect(result.jobs.filter((job) => job.verified)).toHaveLength(1);
+  });
+
+  it("uses a public ATS JSON feed only when the saved page explicitly embeds its board", async () => {
+    const urls: string[] = [];
+    const result = await discoverOfficialCareerPage("https://acme.test/careers", async (input) => {
+      urls.push(input);
+      if (input === "https://acme.test/careers") return new Response('<iframe src="https://boards.greenhouse.io/embed/job_board?for=acme"></iframe>', { headers: { "content-type": "text/html" } });
+      return new Response(JSON.stringify({ jobs: [{ id: 42, title: "Product Manager", absolute_url: "https://boards.greenhouse.io/acme/jobs/42" }] }), { headers: { "content-type": "application/json" } });
+    });
+    expect(urls).toEqual(["https://acme.test/careers", "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true"]);
+    expect(result).toMatchObject({ status: "supported", jobs: [{ title: "Product Manager", verified: true }] });
   });
 
   it("supports permitted Greenhouse and Lever public feed shapes", async () => {
@@ -47,7 +88,7 @@ describe("Version 4 job radar", () => {
       return new Response(fixture.replaceAll("https://acme.test/jobs/123", "https://acme.test/jobs/final"), { status: 200 });
     });
     expect(urls).toEqual(["https://acme.test/careers", "https://acme.test/open-roles"]);
-    expect(result.status).toBe("supported");
+    expect(result.status).toBe("partial");
     expect(result.sourceUrl).toBe("https://acme.test/open-roles");
   });
 

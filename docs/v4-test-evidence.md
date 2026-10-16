@@ -43,3 +43,24 @@ This record distinguishes executed evidence from intended behaviour. No browser,
 - Staging migration/backfill, backup manifest and count verification — **BLOCKED** pending deployment access.
 - Production deployment and smoke test — **BLOCKED** pending explicit authorization; the branch has not been promoted.
 - Local Wrangler built-preview smoke — **BLOCKED** by environment error `uv_interface_addresses returned Unknown system error 1`; the automated route/unit evidence above remains valid, but this is not a browser smoke result.
+
+## Completion pass — 16 October 2026
+
+This section supersedes earlier missing-capability and dependency statuses above.
+
+- Fresh integrated run: 95 files, 376 passed, one skipped.
+- `pnpm exec tsc --noEmit --pretty false`: PASS after schedule fixture typing correction.
+- `pnpm build`: PASS, all V4 and new saved-search/notification/schedule routes present.
+- Focused document tests: real PDF and DOCX extraction/export round-trips, pagination, invalid signature and owner-scoped upload.
+- Release self-test: actual SQLite-backed D1 service flow and cleanup after injected database failure; foreign-owner company remains intact.
+- Metrics regression: multiple profiles matching the same job count as one high-fit live job.
+- Source scope: rejects unsaved callers, domain sale and partner pages; bounded detail fetch promotes only verified JobPosting/explicit trusted ATS feed results.
+- Agent: atomic claims, stale-lease recovery, persistent cancellation, internal CRM record changes, real private export URLs, estimated-vs-actual cost labeling.
+- Production dependency audit: no high/critical findings; one moderate unused Mammoth CLI `sprintf-js` finding remains disclosed.
+- Before migration, production backup HTTP 200 and R2 size readback confirmed; 769 companies and all 991 memberships preserved at baseline.
+
+Browser widths and controlled Gmail send remain unverified; production receipt will be appended only after observed checks.
+
+### Production evidence — version 20
+
+11/11 isolated workflow steps PASS on hosted D1. Synthetic cleanup PASS, remainingRows 0. PDF/DOCX bytes generated on Worker. Cross-owner application lookup denied. Actual low-reasoning OpenAI connectivity PASS (18 tokens, synthetic prompt only). Exact production row preservation PASS for all 769 companies, 991 category mappings and one import. All V4 migrations observed through new-table readback. Gmail provider configuration present but connected accounts=0; OAuth/send test BLOCKED pending user connection and one individually approved test message.

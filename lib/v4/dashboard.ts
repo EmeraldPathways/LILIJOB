@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { getDb } from "../../db";
 import { applicationEvents, applications, companies, jobs } from "../../db/schema";
 import { agentRuns, agentSteps, companySignals, dailyActionItems, interviews, jobDiscoveryRuns, jobMatches, recruitmentContacts } from "../../db/schema-v4";
@@ -14,7 +14,7 @@ export async function getDashboardSummary(ownerId: string) {
   const now = dateNow();
   const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
   const [highFit, newJobs, publicContacts, followups, upcomingInterviews, responses, signals, errors, stageCounts] = await Promise.all([
-    db.select({ count: sql<number>`count(*)` }).from(jobMatches).innerJoin(jobs, and(eq(jobs.ownerId, jobMatches.ownerId), eq(jobs.id, jobMatches.jobId))).where(and(eq(jobMatches.ownerId, ownerId), gte(jobMatches.score, 70), eq(jobMatches.dismissed, false), eq(jobs.status, "open"), eq(jobs.confidence, "high"))),
+    db.select({ count: sql<number>`count(distinct ${jobMatches.jobId})` }).from(jobMatches).innerJoin(jobs, and(eq(jobs.ownerId, jobMatches.ownerId), eq(jobs.id, jobMatches.jobId))).where(and(eq(jobMatches.ownerId, ownerId), gte(jobMatches.score, 70), eq(jobMatches.dismissed, false), eq(jobs.status, "open"), eq(jobs.confidence, "high"))),
     db.select({ count: sql<number>`count(*)` }).from(jobs).where(and(eq(jobs.ownerId, ownerId), gte(jobs.createdAt, weekAgo), eq(jobs.status, "open"), eq(jobs.confidence, "high"))),
     db.select({ count: sql<number>`count(*)` }).from(recruitmentContacts).where(and(eq(recruitmentContacts.ownerId, ownerId), inArray(recruitmentContacts.contactType, ["recruitment-specific", "public-named-recruiter", "public-relevant-hiring-manager"]), eq(recruitmentContacts.doNotContact, false))),
     db.select({ count: sql<number>`count(*)` }).from(applications).where(and(eq(applications.ownerId, ownerId), lte(applications.followupDueAt, now), inArray(applications.stage, ["Applied", "Follow-up", "Contacted"]))),
@@ -96,7 +96,7 @@ export async function getAgentRun(ownerId: string, runId: string) {
   const [run] = await getDb().select().from(agentRuns).where(and(eq(agentRuns.ownerId, ownerId), eq(agentRuns.id, runId))).limit(1);
   if (!run) return null;
   const steps = await getDb().select().from(agentSteps).where(and(eq(agentSteps.ownerId, ownerId), eq(agentSteps.runId, runId))).orderBy(asc(agentSteps.stepIndex));
-  return { run, steps };
+  return { run, steps: steps.map((step) => ({ ...step, estimatedCostCents: step.costCents, actualCostCents: null })) };
 }
 
 export async function createAgentRun(ownerId: string, input: { request: string; scope?: unknown; authorisedTools?: string[]; budget?: unknown }) {
@@ -109,22 +109,97 @@ export async function createAgentRun(ownerId: string, input: { request: string; 
 export async function appendAgentStep(ownerId: string, runId: string, step: AgentStep) {
   if (!await getAgentRun(ownerId, runId)) return null;
   const [existing] = await getDb().select().from(agentSteps).where(and(eq(agentSteps.ownerId, ownerId), eq(agentSteps.runId, runId), eq(agentSteps.stepIndex, step.stepIndex))).limit(1);
-  if (existing) return existing;
   const timestamp = dateNow();
+  if (existing) {
+    if (existing.status === "completed" && step.status !== "completed") return existing;
+    const changed = await getDb().update(agentSteps).set({
+      tool: step.tool,
+      status: step.status,
+      inputJson: JSON.stringify(step.input ?? {}),
+      outputJson: JSON.stringify(step.output ?? {}),
+      evidenceJson: JSON.stringify(step.evidence),
+      costCents: step.estimatedCostCents,
+      error: step.status === "failed" && step.output && typeof step.output === "object" && typeof (step.output as Record<string, unknown>).error === "string" ? String((step.output as Record<string, unknown>).error) : null,
+      finishedAt: step.status === "running" ? null : timestamp,
+      updatedAt: timestamp,
+    }).where(and(eq(agentSteps.ownerId, ownerId), eq(agentSteps.runId, runId), eq(agentSteps.stepIndex, step.stepIndex))).returning({ id: agentSteps.id });
+    if (!changed.length) return null;
+    const [updated] = await getDb().select().from(agentSteps).where(and(eq(agentSteps.ownerId, ownerId), eq(agentSteps.runId, runId), eq(agentSteps.stepIndex, step.stepIndex))).limit(1);
+    return updated ? { ...updated, estimatedCostCents: updated.costCents, actualCostCents: null } : null;
+  }
   const id = `agent_step_${crypto.randomUUID()}`;
-  await getDb().insert(agentSteps).values({ id, ownerId, runId, stepIndex: step.stepIndex, tool: step.tool, status: step.status, inputJson: JSON.stringify(step.input ?? {}), outputJson: JSON.stringify(step.output ?? {}), evidenceJson: JSON.stringify(step.evidence), costCents: step.costCents, error: null, startedAt: timestamp, finishedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
+  const startedAt = step.status === "running" ? timestamp : null;
+  const finishedAt = step.status === "running" ? null : timestamp;
+  await getDb().insert(agentSteps).values({ id, ownerId, runId, stepIndex: step.stepIndex, tool: step.tool, status: step.status, inputJson: JSON.stringify(step.input ?? {}), outputJson: JSON.stringify(step.output ?? {}), evidenceJson: JSON.stringify(step.evidence), costCents: step.estimatedCostCents, error: step.status === "failed" && step.output && typeof step.output === "object" && typeof (step.output as Record<string, unknown>).error === "string" ? String((step.output as Record<string, unknown>).error) : null, startedAt, finishedAt, createdAt: timestamp, updatedAt: timestamp }).onConflictDoNothing();
   const [created] = await getDb().select().from(agentSteps).where(eq(agentSteps.id, id)).limit(1);
-  return created ?? null;
+  if (created) return { ...created, estimatedCostCents: created.costCents, actualCostCents: null };
+  const [raced] = await getDb().select().from(agentSteps).where(and(eq(agentSteps.ownerId, ownerId), eq(agentSteps.runId, runId), eq(agentSteps.stepIndex, step.stepIndex))).limit(1);
+  return raced ? { ...raced, estimatedCostCents: raced.costCents, actualCostCents: null } : null;
 }
 
-export async function updateAgentRun(ownerId: string, runId: string, input: { status?: string; summary?: string | null; error?: string | null; checkpoint?: unknown; cost?: unknown }) {
+const AGENT_STEP_LEASE_MS = 60_000;
+
+export async function claimAgentStep(ownerId: string, runId: string, step: AgentStep): Promise<boolean> {
+  if (step.status !== "running" || !await getAgentRun(ownerId, runId)) return false;
+  const db = getDb();
+  const timestamp = dateNow();
+  const id = `agent_step_${crypto.randomUUID()}`;
+  const inserted = await db.insert(agentSteps).values({
+    id,
+    ownerId,
+    runId,
+    stepIndex: step.stepIndex,
+    tool: step.tool,
+    status: "running",
+    inputJson: JSON.stringify(step.input ?? {}),
+    outputJson: "{}",
+    evidenceJson: "[]",
+    costCents: step.estimatedCostCents,
+    error: null,
+    startedAt: timestamp,
+    finishedAt: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }).onConflictDoNothing().returning({ id: agentSteps.id });
+  if (inserted.length) return true;
+
+  const [existing] = await db.select().from(agentSteps).where(and(eq(agentSteps.ownerId, ownerId), eq(agentSteps.runId, runId), eq(agentSteps.stepIndex, step.stepIndex))).limit(1);
+  if (!existing || existing.status === "completed" || existing.status === "blocked") return false;
+  const startedAt = existing.startedAt ? Date.parse(existing.startedAt) : Number.NaN;
+  const leaseExpired = existing.status !== "running" || !Number.isFinite(startedAt) || Date.now() - startedAt >= AGENT_STEP_LEASE_MS;
+  if (!leaseExpired) return false;
+  const startCondition = existing.startedAt === null ? isNull(agentSteps.startedAt) : eq(agentSteps.startedAt, existing.startedAt);
+  const reclaimed = await db.update(agentSteps).set({
+    status: "running",
+    inputJson: JSON.stringify(step.input ?? {}),
+    outputJson: "{}",
+    evidenceJson: "[]",
+    costCents: step.estimatedCostCents,
+    error: null,
+    startedAt: timestamp,
+    finishedAt: null,
+    updatedAt: timestamp,
+  }).where(and(
+    eq(agentSteps.ownerId, ownerId),
+    eq(agentSteps.runId, runId),
+    eq(agentSteps.stepIndex, step.stepIndex),
+    eq(agentSteps.status, existing.status),
+    startCondition,
+  )).returning({ id: agentSteps.id });
+  return reclaimed.length > 0;
+}
+
+export async function updateAgentRun(ownerId: string, runId: string, input: { status?: string; summary?: string | null; error?: string | null; checkpoint?: unknown; cost?: unknown; expectedStatuses?: string[] }) {
   const values: Partial<typeof agentRuns.$inferInsert> = { updatedAt: dateNow() };
   if (input.status !== undefined) values.status = input.status;
   if (input.summary !== undefined) values.summary = input.summary;
   if (input.error !== undefined) values.error = input.error;
   if (input.checkpoint !== undefined) values.checkpointJson = JSON.stringify(input.checkpoint);
   if (input.cost !== undefined) values.costJson = JSON.stringify(input.cost);
-  const changed = await getDb().update(agentRuns).set(values).where(and(eq(agentRuns.ownerId, ownerId), eq(agentRuns.id, runId))).returning({ id: agentRuns.id });
+  if (input.expectedStatuses && input.expectedStatuses.length === 0) return null;
+  const conditions = [eq(agentRuns.ownerId, ownerId), eq(agentRuns.id, runId)];
+  if (input.expectedStatuses) conditions.push(inArray(agentRuns.status, input.expectedStatuses));
+  const changed = await getDb().update(agentRuns).set(values).where(and(...conditions)).returning({ id: agentRuns.id });
   if (!changed.length) return null;
   return getAgentRun(ownerId, runId);
 }

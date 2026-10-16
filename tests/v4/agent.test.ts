@@ -3,6 +3,7 @@ import {
   AGENT_TOOLS,
   AgentExecutionLimiter,
   canExecuteAgentTool,
+  createDefaultAgentPlan,
   createAgentStep,
   estimateAgentTokens,
   getAgentTool,
@@ -28,27 +29,30 @@ const validArguments: Record<string, Record<string, unknown>> = {
   draft_outreach: { companyId: "company-1", jobId: "job-1" },
   create_action_items: {},
   create_interview_pack: { applicationId: "application-1" },
-  export_documents: { documentIds: ["document-1"] },
+  export_documents: { applicationPackIds: ["pack-1"], interviewIds: ["interview-1"], format: "pdf" },
   create_application: { jobId: "job-1" },
   update_application_stage: { applicationId: "application-1", stage: "Applied" },
+  submit_application: { jobId: "job-1" },
   send_outreach: { draftId: "draft-1" },
   schedule_communication: { draftId: "draft-1", scheduledAt: "2026-10-16T09:00:00.000Z" },
 };
 
 describe("Version 4 agent safety and operational controls", () => {
   it("registers and validates every planned tool and its argument shape", () => {
-    expect(AGENT_TOOLS).toHaveLength(20);
-    expect(new Set(AGENT_TOOLS.map((tool) => tool.name)).size).toBe(20);
+    expect(AGENT_TOOLS).toHaveLength(21);
+    expect(new Set(AGENT_TOOLS.map((tool) => tool.name)).size).toBe(21);
     for (const tool of AGENT_TOOLS) {
       expect(validateAgentToolArguments(tool.name, validArguments[tool.name]).error).toBeNull();
     }
     expect(getAgentTool("send_outreach")?.requiresApproval).toBe(true);
+    expect(getAgentTool("refresh_jobs")).toMatchObject({ estimatedCostCents: 2 });
+    expect(getAgentTool("refresh_jobs")).not.toHaveProperty("costCents");
   });
 
   it("validates the complete proposed plan against the server registry", () => {
-    const result = validateAgentPlan(AGENT_TOOLS.map((tool) => ({ tool: tool.name, input: validArguments[tool.name] })));
+    const result = validateAgentPlan(AGENT_TOOLS.slice(0, 20).map((tool) => ({ tool: tool.name, input: validArguments[tool.name] })));
     expect(result.error).toBeNull();
-    expect(result.steps).toHaveLength(AGENT_TOOLS.length);
+    expect(result.steps).toHaveLength(20);
     expect(validateAgentPlan([{ tool: "run_shell", input: {} }]).error).toMatch(/unknown agent tool/i);
   });
 
@@ -59,13 +63,19 @@ describe("Version 4 agent safety and operational controls", () => {
     expect(validateAgentPlan([{ tool: "search_jobs", input: { query: "jobs" }, approved: true }]).error).toMatch(/plan step/i);
   });
 
-  it("allows read and draft tools but always blocks external actions, including approved ones", () => {
+  it("allows internal CRM tools but always blocks external actions, including approved ones", () => {
     expect(canExecuteAgentTool("search_jobs", { approved: false })).toBe(true);
     expect(canExecuteAgentTool("draft_outreach", { approved: false })).toBe(true);
+    expect(canExecuteAgentTool("create_application", { approved: false })).toBe(true);
+    expect(canExecuteAgentTool("update_application_stage", { approved: false })).toBe(true);
     expect(canExecuteAgentTool("send_outreach", { approved: false })).toBe(false);
     expect(canExecuteAgentTool("send_outreach", { approved: true })).toBe(false);
-    expect(canExecuteAgentTool("create_application", { approved: true })).toBe(false);
+    expect(canExecuteAgentTool("submit_application", { approved: true })).toBe(false);
     expect(canExecuteAgentTool("unknown", { approved: true })).toBe(false);
+  });
+
+  it("routes apply or submit requests to an external approval-gated tool", () => {
+    expect(createDefaultAgentPlan("Apply to the Product Manager role")).toEqual([{ tool: "submit_application", input: {} }]);
   });
 
   it("normalizes server-side budgets and rejects invalid limits", () => {

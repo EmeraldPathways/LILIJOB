@@ -14,3 +14,14 @@
 12. Use **Today** for saved counts, open actions and the stage funnel. Use **AI Job Hunt Agent** for owner-scoped read/draft tasks. The run controls allow safe execution, cancel, resume and retry from a saved checkpoint; send/apply/schedule tools are stopped at an approval boundary.
 
 On mobile, use the menu button, choose a sidebar destination, and use Escape or the close button to dismiss the drawer. Pages stay inside the authenticated app shell beside the sidebar. Browser QA against the deployed Site remains pending until an authenticated staging session is available.
+
+## V4 quick start
+
+1. Open **Candidate Profile & CVs**, save a strategy, upload your CV, and explicitly approve truthful achievement evidence.
+2. Use any of the four sector Sheet/Detailed views; imported source fields remain available.
+3. Open **Job Radar**, select a saved company and its official career source, then refresh. Unverified links and blocked sources stay labeled. Choose only selected companies for optional recurring scope; Run due now uses that scope.
+4. Open **Opportunities**, rank with your candidate profile, inspect evidence/gaps, and prepare an application draft. Review/edit before exporting Word/PDF.
+5. Track status and next action in **Applications**. Use **Outreach & Email** to connect Gmail, review a sourced contact and approve each send.
+6. Save your preferred local queries under **Saved searches**. The in-app digest requires opt-in and respects your timezone/quiet hours; it does not send emails.
+7. Save an interview with a Dublin date/time under **Interviews**, prepare and edit the pack, then export PDF/Word and record the outcome.
+8. Use **AI Job Hunt Agent** for bounded saved-data research/drafts/internal tracking. Estimated budgets are shown; external sends/submissions still require their separate approval.

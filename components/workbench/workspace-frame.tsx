@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import {
   Building2,
   BarChart3,
+  Bookmark,
   Bot,
   ClipboardList,
   Compass,
@@ -47,6 +48,7 @@ const navigationGroups = [
       { label: "Companies", href: "/", icon: Building2 },
       { label: "Opportunities", href: "/opportunities", icon: Sparkles },
       { label: "Job Radar", href: "/job-radar", icon: Radar },
+      { label: "Saved searches", href: "/saved-searches", icon: Bookmark },
       { label: "Applications", href: "/applications", icon: KanbanSquare },
       { label: "Sector Pitches", href: "/pitches", icon: MessageSquareText },
       { label: "AI assistant", href: "/ai", icon: MessageSquareText },

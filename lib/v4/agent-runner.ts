@@ -17,11 +17,12 @@ import {
   type AgentBudget,
   type AgentPlanStep,
 } from "./agent";
-import { appendAgentStep, generateActionReminders, getAgentRun, listActionItems, updateAgentRun } from "./dashboard";
-import { listCandidateProfiles, listApplications, listExperienceEvidence } from "./repository";
+import { appendAgentStep, claimAgentStep, generateActionReminders, getAgentRun, listActionItems, updateAgentRun } from "./dashboard";
+import { createApplication, getApplicationPack, listApplications, listCandidateProfiles, listExperienceEvidence, updateApplicationStage } from "./repository";
 import { listRecruitmentContacts, listHiringSignals } from "./intelligence-repository";
 import { buildApplicationPack } from "./packs";
 import { buildInterviewPack } from "./interviews";
+import { getInterview } from "./interview-repository";
 import { rankAndPersistOpportunities } from "./opportunities";
 import { discoverOfficialCareerPage, isSafePublicUrl } from "./job-radar";
 import { getV4Job, listV4Jobs, persistDiscoveredJobs } from "./job-repository";
@@ -45,12 +46,13 @@ export class AgentExecutionLimitError extends Error {
   }
 }
 
-type AgentUsage = { inputTokens: number; outputTokens: number; totalTokens: number; searches: number; costCents: number };
+type AgentUsage = { inputTokens: number; outputTokens: number; totalTokens: number; searches: number; estimatedCostCents: number; actualCostCents: number | null };
 type AgentCheckpoint = {
   version: 1;
   plan: AgentPlanStep[];
   nextPlanIndex: number;
   attempts: Record<string, number>;
+  cancelRequested?: boolean;
   pauseReason?: string;
   lastError?: string;
 };
@@ -98,7 +100,8 @@ function parseUsage(value: unknown): AgentUsage {
     outputTokens,
     totalTokens: finiteCount(raw.totalTokens) || inputTokens + outputTokens,
     searches: finiteCount(raw.searches),
-    costCents: finiteCount(raw.costCents),
+    estimatedCostCents: typeof raw.estimatedCostCents === "number" ? finiteCount(raw.estimatedCostCents) : finiteCount(raw.costCents),
+    actualCostCents: typeof raw.actualCostCents === "number" && Number.isFinite(raw.actualCostCents) && raw.actualCostCents >= 0 ? Math.trunc(raw.actualCostCents) : null,
   };
 }
 
@@ -115,6 +118,7 @@ function parseCheckpoint(value: unknown, request: string): AgentCheckpoint {
     plan: validated.steps,
     nextPlanIndex: Math.max(0, Math.min(validated.steps.length, finiteCount(raw.nextPlanIndex))),
     attempts: parseObject(raw.attempts) as Record<string, number>,
+    ...(raw.cancelRequested === true ? { cancelRequested: true } : {}),
     ...(typeof raw.pauseReason === "string" ? { pauseReason: raw.pauseReason } : {}),
     ...(typeof raw.lastError === "string" ? { lastError: raw.lastError } : {}),
     ...(validated.error ? { lastError: validated.error } : {}),
@@ -135,7 +139,7 @@ function withinBudget(usage: AgentUsage, budget: AgentBudget, toolName: string, 
   const tool = getAgentTool(toolName);
   if (!tool) return "The selected tool is not registered.";
   if (usage.searches + tool.searchUnits > budget.maxSearches) return "searches";
-  if (usage.costCents + tool.costCents > budget.maxCostCents) return "cost";
+  if (usage.estimatedCostCents + tool.estimatedCostCents > budget.maxCostCents) return "cost";
   if (usage.totalTokens + inputTokens + tool.maxOutputTokens > budget.maxTokens) return "tokens";
   return null;
 }
@@ -233,7 +237,7 @@ async function executeRegisteredTool(ownerId: string, step: AgentPlanStep, usage
       return { output: { count: applications.length, applications: selected.map((application) => ({ id: application.id, title: application.title, stage: application.stage, dueAt: application.followupDueAt })) }, evidence: [] };
     }
     case "get_usage_budget":
-      return { output: { budget, usage }, evidence: [] };
+      return { output: { budget, usage: { ...usage, actualCostCents: null } }, evidence: [] };
     case "prepare_application_pack": {
       const result = await getV4Job(ownerId, String(input.jobId));
       if (!result) return { output: { found: false, reason: "Job not found for this owner." }, evidence: [] };
@@ -278,18 +282,65 @@ async function executeRegisteredTool(ownerId: string, step: AgentPlanStep, usage
       const result = buildInterviewPack({ companyName, roleTitle: job?.title ?? application.title, jobSourceUrl: job?.url ?? null, checkedAt: job?.updatedAt ?? null, companyFacts: [], requirements: [], approvedStories: [] });
       return { output: { editable: true, applicationId: application.id, pack: result }, evidence: job?.url && isSafePublicUrl(job.url) ? [job.url] : [] };
     }
-    case "export_documents":
-      return { output: { prepared: true, private: true, documentIds: Array.isArray(input.documentIds) ? input.documentIds : [], nextAction: "Review the selected documents in the private export screen." }, evidence: [] };
-    case "create_application":
-    case "update_application_stage":
+    case "export_documents": {
+      const format = typeof input.format === "string" ? input.format : "html";
+      const packIds = [...new Set([
+        ...parseList(input.applicationPackIds),
+        ...parseList(input.documentIds),
+      ].filter((id): id is string => typeof id === "string"))];
+      const interviewIds = [...new Set(parseList(input.interviewIds).filter((id): id is string => typeof id === "string"))];
+      const exports: Array<{ id: string; kind: "application_pack" | "interview_pack"; format: string; url: string }> = [];
+      const unavailableIds: string[] = [];
+      for (const packId of packIds) {
+        if (!await getApplicationPack(ownerId, packId)) {
+          unavailableIds.push(packId);
+          continue;
+        }
+        exports.push({ id: packId, kind: "application_pack", format, url: `/api/v4/packs/${encodeURIComponent(packId)}/export?format=${encodeURIComponent(format)}` });
+      }
+      for (const interviewId of interviewIds) {
+        const interview = await getInterview(ownerId, interviewId);
+        if (!interview || !interview.packs.length) {
+          unavailableIds.push(interviewId);
+          continue;
+        }
+        exports.push({ id: interviewId, kind: "interview_pack", format, url: `/api/v4/interviews/${encodeURIComponent(interviewId)}/export?format=${encodeURIComponent(format)}` });
+      }
+      if (!exports.length) return { output: { blocked: true, status: "unavailable", reason: "No selected saved application or interview packs are available for this owner.", unavailableCount: unavailableIds.length }, evidence: [] };
+      return { output: { status: "download_ready", format, exports, unavailableCount: unavailableIds.length, unavailableIds }, evidence: [] };
+    }
+    case "create_application": {
+      const jobId = String(input.jobId);
+      const job = await getV4Job(ownerId, jobId);
+      if (!job) return { output: { blocked: true, reason: "Job not found for this owner; no application record was created." }, evidence: [] };
+      const existing = (await listApplications(ownerId)).find((application) => application.jobId === jobId);
+      const result = existing
+        ? { record: existing, created: false }
+        : await createApplication(ownerId, {
+          companyId: job.job.companyId,
+          jobId,
+          title: job.job.title,
+          manualUrl: job.job.url ?? undefined,
+          dedupKey: `agent-job:${jobId}`,
+          stage: "Target",
+          nextAction: "Review this application record and take any external apply action yourself.",
+        });
+      return { output: { created: result.created, applicationId: result.record.id, title: result.record.title, stage: result.record.stage, submitted: false }, evidence: job.job.url && isSafePublicUrl(job.job.url) ? [job.job.url] : [] };
+    }
+    case "update_application_stage": {
+      const application = await updateApplicationStage(ownerId, String(input.applicationId), String(input.stage), typeof input.note === "string" ? input.note : undefined);
+      if (!application) return { output: { found: false, reason: "Application not found for this owner; no stage was changed." }, evidence: [] };
+      return { output: { updated: true, applicationId: application.id, stage: application.stage }, evidence: [] };
+    }
+    case "submit_application":
     case "send_outreach":
     case "schedule_communication":
       return { output: { reason: "External actions require approval in their dedicated workflow.", nextAction: "Open the related record, review it, and approve the individual action there." }, evidence: [] };
   }
 }
 
-async function persistRun(ownerId: string, runId: string, input: { status?: string; summary?: string | null; error?: string | null; checkpoint?: AgentCheckpoint; cost?: AgentUsage }) {
-  return updateAgentRun(ownerId, runId, input);
+async function persistRun(ownerId: string, runId: string, input: { status?: string; summary?: string | null; error?: string | null; checkpoint?: AgentCheckpoint; cost?: AgentUsage }, expectedStatuses: string[] = ["queued", "running"]) {
+  return await updateAgentRun(ownerId, runId, { ...input, expectedStatuses }) ?? getAgentRun(ownerId, runId);
 }
 
 async function runAgentPlan(ownerId: string, runId: string) {
@@ -311,17 +362,47 @@ async function runAgentPlan(ownerId: string, runId: string) {
     return persistRun(ownerId, runId, { status: "failed", error: error instanceof Error ? error.message : "Invalid agent budget.", summary: "The stored agent budget is invalid.", checkpoint });
   }
   let usage = parseUsage(current.run.costJson);
-  const started = await persistRun(ownerId, runId, { status: "running", checkpoint, cost: usage });
-  if (!started) return null;
-  let nextStepIndex = current.steps.length;
+  const started = await persistRun(ownerId, runId, { status: "running", checkpoint, cost: usage }, ["queued", "running"]);
+  if (!started || started.run.status !== "running") return started;
+
+  // A worker can finish storing a step and stop before advancing the run checkpoint.
+  // Recover that result instead of invoking the same tool a second time.
+  const savedAtCheckpoint = current.steps.find((step) => step.stepIndex === checkpoint.nextPlanIndex);
+  if (["queued", "running"].includes(current.run.status) && savedAtCheckpoint?.status === "completed") {
+    const outputTokens = estimateAgentTokens(parseObject(savedAtCheckpoint.outputJson));
+    usage = { ...usage, outputTokens: usage.outputTokens + outputTokens, totalTokens: usage.totalTokens + outputTokens };
+    checkpoint.nextPlanIndex += 1;
+    delete checkpoint.pauseReason;
+    const isComplete = checkpoint.nextPlanIndex >= checkpoint.plan.length;
+    const recovered = await persistRun(ownerId, runId, {
+      status: isComplete ? "completed" : "running",
+      summary: isComplete ? `${checkpoint.plan.length} planned step${checkpoint.plan.length === 1 ? "" : "s"} completed within budget.` : undefined,
+      checkpoint,
+      cost: usage,
+    }, ["running"]);
+    if (isComplete) return recovered;
+    if (!recovered || recovered.run.status !== "running") return recovered;
+  } else if (current.run.status === "running" && savedAtCheckpoint?.status === "failed") {
+    const failedOutput = parseObject(savedAtCheckpoint.outputJson);
+    const error = typeof failedOutput.error === "string" ? failedOutput.error : "The persisted agent step failed.";
+    const outputTokens = estimateAgentTokens(failedOutput);
+    usage = { ...usage, outputTokens: usage.outputTokens + outputTokens, totalTokens: usage.totalTokens + outputTokens };
+    checkpoint.attempts[String(checkpoint.nextPlanIndex)] = finiteCount(checkpoint.attempts[String(checkpoint.nextPlanIndex)]) + 1;
+    checkpoint.lastError = error;
+    return persistRun(ownerId, runId, { status: "failed", error, summary: `Step ${checkpoint.nextPlanIndex + 1} failed. Retry will resume from this step.`, checkpoint, cost: usage }, ["running"]);
+  } else if (["queued", "running"].includes(current.run.status) && savedAtCheckpoint?.status === "blocked") {
+    checkpoint.pauseReason = "tool_blocked";
+    return persistRun(ownerId, runId, { status: "blocked", summary: "A requested tool was blocked before it could complete.", checkpoint, cost: usage }, ["running"]);
+  }
 
   while (checkpoint.nextPlanIndex < checkpoint.plan.length) {
-    if (cancellationRequests.has(keyFor(ownerId, runId))) {
-      return persistRun(ownerId, runId, { status: "cancelled", summary: "The run was cancelled. Resume to continue from the saved checkpoint.", checkpoint, cost: usage });
-    }
+    const latest = await getAgentRun(ownerId, runId);
+    if (!latest) return null;
+    const latestCheckpoint = parseCheckpoint(latest.run.checkpointJson, latest.run.request);
+    if (cancellationRequests.has(keyFor(ownerId, runId)) || latest.run.status === "cancelled" || latestCheckpoint.cancelRequested || latest.run.status !== "running") return latest;
     if (checkpoint.nextPlanIndex >= budget.maxSteps) {
       checkpoint.pauseReason = "budget";
-      return persistRun(ownerId, runId, { status: "paused", summary: "The run paused at its configured step budget.", checkpoint, cost: usage });
+      return persistRun(ownerId, runId, { status: "paused", summary: "The run paused at its configured step budget.", checkpoint, cost: usage }, ["running"]);
     }
     const step = checkpoint.plan[checkpoint.nextPlanIndex];
     const tool = getAgentTool(step.tool);
@@ -329,7 +410,7 @@ async function runAgentPlan(ownerId: string, runId: string) {
     const validatedInput = validateAgentToolArguments(step.tool, step.input);
     if (validatedInput.error) return persistRun(ownerId, runId, { status: "failed", error: validatedInput.error, summary: "The server rejected unsafe or malformed tool arguments.", checkpoint, cost: usage });
     step.input = validatedInput.input;
-    const stepIndex = nextStepIndex;
+    const stepIndex = checkpoint.nextPlanIndex;
 
     if (!canExecuteAgentTool(step.tool, { approved: false })) {
       const blocked = createAgentStep(stepIndex, step.tool, step.input, {
@@ -337,7 +418,6 @@ async function runAgentPlan(ownerId: string, runId: string) {
         nextAction: "Open the related record, review it, and approve the individual action in its dedicated workflow.",
       }, [], "blocked", 0);
       await appendAgentStep(ownerId, runId, blocked);
-      nextStepIndex += 1;
       checkpoint.pauseReason = "external_action_blocked";
       return persistRun(ownerId, runId, { status: "blocked", summary: "An external action was held for explicit approval in its dedicated workflow.", checkpoint, cost: usage });
     }
@@ -349,37 +429,67 @@ async function runAgentPlan(ownerId: string, runId: string) {
       return persistRun(ownerId, runId, { status: "paused", summary: `The run paused because its ${budgetReason} budget is exhausted. Resume after adjusting the budget.`, checkpoint, cost: usage });
     }
 
+    const claimed = await claimAgentStep(ownerId, runId, createAgentStep(stepIndex, step.tool, step.input, {}, [], "running", tool.estimatedCostCents));
+    if (!claimed) return getAgentRun(ownerId, runId);
+    usage = {
+      ...usage,
+      inputTokens: usage.inputTokens + inputTokens,
+      totalTokens: usage.totalTokens + inputTokens,
+      searches: usage.searches + tool.searchUnits,
+      estimatedCostCents: usage.estimatedCostCents + tool.estimatedCostCents,
+      actualCostCents: null,
+    };
+    const reserved = await persistRun(ownerId, runId, { status: "running", checkpoint, cost: usage }, ["running"]);
+    if (!reserved || reserved.run.status !== "running") {
+      await appendAgentStep(ownerId, runId, createAgentStep(stepIndex, step.tool, step.input, {}, [], "queued", tool.estimatedCostCents));
+      return reserved;
+    }
+
     try {
       const result = await executeRegisteredTool(ownerId, step, usage, budget);
       const bounded = cleanOutput(result.output, tool.maxOutputTokens);
       const outputTokens = bounded.tokens;
       usage = {
-        inputTokens: usage.inputTokens + inputTokens,
+        ...usage,
         outputTokens: usage.outputTokens + outputTokens,
-        totalTokens: usage.totalTokens + inputTokens + outputTokens,
-        searches: usage.searches + tool.searchUnits,
-        costCents: usage.costCents + tool.costCents,
+        totalTokens: usage.totalTokens + outputTokens,
+        actualCostCents: null,
       };
       const resultIsBlocked = bounded.output && typeof bounded.output === "object" && (bounded.output as Record<string, unknown>).blocked === true;
       const stepStatus = resultIsBlocked ? "blocked" : "completed";
-      const recorded = createAgentStep(stepIndex, step.tool, step.input, bounded.output, result.evidence, stepStatus, tool.costCents);
-      await appendAgentStep(ownerId, runId, recorded);
-      nextStepIndex += 1;
+      const recorded = createAgentStep(stepIndex, step.tool, step.input, bounded.output, result.evidence, stepStatus, tool.estimatedCostCents);
+      const saved = await appendAgentStep(ownerId, runId, recorded);
+      if (!saved) throw new Error("The completed agent step could not be persisted.");
       if (resultIsBlocked) {
         checkpoint.pauseReason = "tool_blocked";
-        return persistRun(ownerId, runId, { status: "blocked", summary: "A requested tool was blocked because its required owner-scoped source was unavailable.", checkpoint, cost: usage });
+        return persistRun(ownerId, runId, { status: "blocked", summary: "A requested tool was blocked because its required owner-scoped source was unavailable.", checkpoint, cost: usage }, ["running"]);
       }
+      const afterStep = await getAgentRun(ownerId, runId);
+      if (!afterStep) return null;
+      const afterStepCheckpoint = parseCheckpoint(afterStep.run.checkpointJson, afterStep.run.request);
+      if (afterStep.run.status === "cancelled" || afterStepCheckpoint.cancelRequested || cancellationRequests.has(keyFor(ownerId, runId))) {
+        if (afterStep.run.status !== "cancelled") return afterStep;
+        checkpoint.nextPlanIndex += 1;
+        checkpoint.cancelRequested = true;
+        delete checkpoint.pauseReason;
+        return await updateAgentRun(ownerId, runId, {
+          summary: "The run was cancelled after the current safe step finished.",
+          checkpoint,
+          cost: usage,
+          expectedStatuses: ["cancelled"],
+        }) ?? getAgentRun(ownerId, runId);
+      }
+      if (afterStep.run.status !== "running") return afterStep;
       checkpoint.nextPlanIndex += 1;
       delete checkpoint.pauseReason;
-      const cancelled = cancellationRequests.has(keyFor(ownerId, runId));
       const isComplete = checkpoint.nextPlanIndex >= checkpoint.plan.length;
       const updated = await persistRun(ownerId, runId, {
-        status: cancelled ? "cancelled" : isComplete ? "completed" : "running",
-        summary: cancelled ? "The run was cancelled after the current safe step finished." : isComplete ? `${checkpoint.plan.length} planned step${checkpoint.plan.length === 1 ? "" : "s"} completed within budget.` : undefined,
+        status: isComplete ? "completed" : "running",
+        summary: isComplete ? `${checkpoint.plan.length} planned step${checkpoint.plan.length === 1 ? "" : "s"} completed within budget.` : undefined,
         checkpoint,
         cost: usage,
-      });
-      if (cancelled || isComplete) return updated;
+      }, ["running"]);
+      if (!updated || updated.run.status !== "running" || isComplete) return updated;
     } catch (error) {
       const message = error instanceof Error ? error.message : "The tool failed to execute.";
       const attempt = finiteCount(checkpoint.attempts[String(checkpoint.nextPlanIndex)]) + 1;
@@ -388,18 +498,19 @@ async function runAgentPlan(ownerId: string, runId: string) {
       const errorOutput = { error: message };
       const errorOutputTokens = estimateAgentTokens(errorOutput);
       usage = {
-        inputTokens: usage.inputTokens + inputTokens,
+        ...usage,
         outputTokens: usage.outputTokens + errorOutputTokens,
-        totalTokens: usage.totalTokens + inputTokens + errorOutputTokens,
-        searches: usage.searches + tool.searchUnits,
-        costCents: usage.costCents + tool.costCents,
+        totalTokens: usage.totalTokens + errorOutputTokens,
+        actualCostCents: null,
       };
-      await appendAgentStep(ownerId, runId, createAgentStep(stepIndex, step.tool, step.input, errorOutput, [], "failed", tool.costCents));
-      nextStepIndex += 1;
-      return persistRun(ownerId, runId, { status: "failed", error: message, summary: `Step ${checkpoint.nextPlanIndex + 1} failed. Retry will resume from this step.`, checkpoint, cost: usage });
+      await appendAgentStep(ownerId, runId, createAgentStep(stepIndex, step.tool, step.input, errorOutput, [], "failed", tool.estimatedCostCents));
+      const afterFailure = await getAgentRun(ownerId, runId);
+      if (!afterFailure) return null;
+      if (afterFailure.run.status !== "running" || parseCheckpoint(afterFailure.run.checkpointJson, afterFailure.run.request).cancelRequested) return afterFailure;
+      return persistRun(ownerId, runId, { status: "failed", error: message, summary: `Step ${checkpoint.nextPlanIndex + 1} failed. Retry will resume from this step.`, checkpoint, cost: usage }, ["running"]);
     }
   }
-  return persistRun(ownerId, runId, { status: "completed", summary: `${checkpoint.plan.length} planned steps completed within budget.`, checkpoint, cost: usage });
+  return persistRun(ownerId, runId, { status: "completed", summary: `${checkpoint.plan.length} planned steps completed within budget.`, checkpoint, cost: usage }, ["running"]);
 }
 
 export async function executeAgentRun(ownerId: string, runId: string) {
@@ -424,15 +535,18 @@ export async function cancelAgentRun(ownerId: string, runId: string) {
   const current = await getAgentRun(ownerId, runId);
   if (!current || !["queued", "running", "paused"].includes(current.run.status)) return current;
   const key = keyFor(ownerId, runId);
-  cancellationRequests.add(key);
   const checkpoint = parseCheckpoint(current.run.checkpointJson, current.run.request);
-  return updateAgentRun(ownerId, runId, { status: "cancelled", summary: "The run was cancelled. Resume to continue from the saved checkpoint.", checkpoint });
+  checkpoint.cancelRequested = true;
+  const cancelled = await updateAgentRun(ownerId, runId, { status: "cancelled", summary: "The run was cancelled. Resume to continue from the saved checkpoint.", checkpoint, expectedStatuses: [current.run.status] });
+  if (cancelled) cancellationRequests.add(key);
+  return cancelled ?? getAgentRun(ownerId, runId);
 }
 
 export async function resumeAgentRun(ownerId: string, runId: string, budgetOverride?: unknown) {
   const current = await getAgentRun(ownerId, runId);
   if (!current || !["cancelled", "paused"].includes(current.run.status)) return current;
   const checkpoint = parseCheckpoint(current.run.checkpointJson, current.run.request);
+  delete checkpoint.cancelRequested;
   delete checkpoint.pauseReason;
   delete checkpoint.lastError;
   if (budgetOverride !== undefined) {
@@ -444,7 +558,7 @@ export async function resumeAgentRun(ownerId: string, runId: string, budgetOverr
     ));
   }
   cancellationRequests.delete(keyFor(ownerId, runId));
-  return updateAgentRun(ownerId, runId, { status: "queued", summary: "The run is ready to resume from its saved checkpoint.", error: null, checkpoint });
+  return await updateAgentRun(ownerId, runId, { status: "queued", summary: "The run is ready to resume from its saved checkpoint.", error: null, checkpoint, expectedStatuses: ["cancelled", "paused"] }) ?? getAgentRun(ownerId, runId);
 }
 
 export async function retryAgentRun(ownerId: string, runId: string) {
@@ -454,7 +568,7 @@ export async function retryAgentRun(ownerId: string, runId: string) {
   const currentAttempt = finiteCount(checkpoint.attempts[String(checkpoint.nextPlanIndex)]);
   if (currentAttempt >= 3) return updateAgentRun(ownerId, runId, { summary: "The failed step reached the retry limit.", error: checkpoint.lastError ?? "Retry limit reached.", checkpoint });
   delete checkpoint.lastError;
-  return updateAgentRun(ownerId, runId, { status: "queued", summary: "The failed step is ready to retry from its saved checkpoint.", error: null, checkpoint });
+  return await updateAgentRun(ownerId, runId, { status: "queued", summary: "The failed step is ready to retry from its saved checkpoint.", error: null, checkpoint, expectedStatuses: ["failed"] }) ?? getAgentRun(ownerId, runId);
 }
 
 export const AGENT_EXECUTION_LIMITS = {

@@ -17,6 +17,7 @@ import { PATCH as update } from "../../app/api/v4/interviews/[interviewId]/route
 import { PATCH as updatePractice, POST as createPack } from "../../app/api/v4/interviews/[interviewId]/pack/route";
 import { POST as approveFollowUp } from "../../app/api/v4/interviews/[interviewId]/follow-up/approve/route";
 import { GET as exportInterview } from "../../app/api/v4/interviews/[interviewId]/export/route";
+import { extractCandidateDocumentText } from "../../lib/v4/documents";
 
 function request(path: string, init: RequestInit = {}, authenticated = true) {
   const headers = new Headers(init.headers);
@@ -101,5 +102,32 @@ describe("Version 4 interview routes", () => {
     expect(html).toContain("I led a test.");
     expect(html).toContain("progressed");
     expect(html).toContain("approved");
+  });
+
+  it("exports the owner-scoped interview pack as real PDF and DOCX attachments", async () => {
+    state.getInterview.mockResolvedValue({
+      interview: { id: "interview-a", round: "Final", timezone: "Europe/Dublin", outcome: "progressed", followUpDraft: null },
+      packs: [{ version: 2, generatedAt: "2026-10-15T12:00:00.000Z", sectionsJson: JSON.stringify({ brief: "Acme builds payments tools.", starStories: [{ statement: "Led checkout experiments." }] }) }],
+    });
+
+    const pdf = await exportInterview(request("/api/v4/interviews/interview-a/export?format=pdf"), context);
+    const pdfBytes = new Uint8Array(await pdf.arrayBuffer());
+    expect(pdf.headers.get("content-type")).toBe("application/pdf");
+    expect(pdf.headers.get("content-disposition")).toContain('filename="interview-interview-a.pdf"');
+    expect(new TextDecoder().decode(pdfBytes.slice(0, 5))).toBe("%PDF-");
+    expect((await extractCandidateDocumentText(pdfBytes, "interview.pdf")).text).toContain("Led checkout experiments.");
+
+    const docx = await exportInterview(request("/api/v4/interviews/interview-a/export?format=docx"), context);
+    const docxBytes = new Uint8Array(await docx.arrayBuffer());
+    expect(docx.headers.get("content-type")).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    expect(docx.headers.get("content-disposition")).toContain('filename="interview-interview-a.docx"');
+    expect(docxBytes.slice(0, 4)).toEqual(new Uint8Array([0x50, 0x4b, 0x03, 0x04]));
+    expect((await extractCandidateDocumentText(docxBytes, "interview.docx")).text).toContain("Led checkout experiments.");
+    expect(state.getInterview).toHaveBeenCalledWith("owner-a", "interview-a");
+  });
+
+  it("rejects unsupported interview export formats", async () => {
+    const response = await exportInterview(request("/api/v4/interviews/interview-a/export?format=exe"), context);
+    expect(response.status).toBe(400);
   });
 });

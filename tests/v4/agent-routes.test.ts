@@ -81,6 +81,7 @@ describe("Version 4 agent routes", () => {
     expect(response.status).toBe(201);
     expect(state.createRun).toHaveBeenCalledWith("owner-a", expect.objectContaining({ authorisedTools: ["search_jobs"], budget: { maxSearches: 3, maxTokens: 5_000, maxCostCents: 100, maxSteps: 20 } }));
     expect(state.updateRun).toHaveBeenCalledWith("owner-a", "run-2", expect.objectContaining({ checkpoint: expect.objectContaining({ nextPlanIndex: 0, plan: [{ tool: "search_jobs", input: { title: "Product manager" } }] }) }));
+    expect(state.updateRun).toHaveBeenCalledWith("owner-a", "run-2", expect.objectContaining({ cost: expect.objectContaining({ estimatedCostCents: 0, actualCostCents: null }) }));
   });
 
   it("rejects unknown tools and injection-bearing arguments before creating a run", async () => {

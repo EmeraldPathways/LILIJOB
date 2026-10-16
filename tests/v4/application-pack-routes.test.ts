@@ -5,6 +5,7 @@ vi.mock("../../lib/v4/repository", () => ({ getApplicationPack: state.get, creat
 
 import { GET, PATCH } from "../../app/api/v4/packs/[packId]/route";
 import { GET as exportPack } from "../../app/api/v4/packs/[packId]/export/route";
+import { extractCandidateDocumentText } from "../../lib/v4/documents";
 
 const pack = { id: "pack-1", ownerId: "owner-a", applicationId: "app-1", profileId: "profile-1", version: 1, sourceUrl: "https://acme.test/jobs/1", payloadJson: JSON.stringify({ jobTitle: "Product Manager", companyName: "Acme", tailoredSummary: "Original" }) };
 
@@ -31,5 +32,29 @@ describe("Version 4 application pack routes", () => {
     const exported = await exportPack(request("/api/v4/packs/pack-1/export"), { params: Promise.resolve({ packId: "pack-1" }) });
     expect(exported.status).toBe(200);
     expect(await exported.text()).toContain("Product Manager");
+  });
+
+  it("exports the saved pack as a real PDF or DOCX attachment", async () => {
+    const context = { params: Promise.resolve({ packId: "pack-1" }) };
+    const pdf = await exportPack(request("/api/v4/packs/pack-1/export?format=pdf"), context);
+    const pdfBytes = new Uint8Array(await pdf.arrayBuffer());
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers.get("content-type")).toBe("application/pdf");
+    expect(pdf.headers.get("content-disposition")).toContain('filename="application-pack-1.pdf"');
+    expect(new TextDecoder().decode(pdfBytes.slice(0, 5))).toBe("%PDF-");
+    expect((await extractCandidateDocumentText(pdfBytes, "application-pack.pdf")).text).toContain("Original");
+
+    const docx = await exportPack(request("/api/v4/packs/pack-1/export?format=docx"), context);
+    const docxBytes = new Uint8Array(await docx.arrayBuffer());
+    expect(docx.headers.get("content-type")).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    expect(docx.headers.get("content-disposition")).toContain('filename="application-pack-1.docx"');
+    expect(docxBytes.slice(0, 4)).toEqual(new Uint8Array([0x50, 0x4b, 0x03, 0x04]));
+    expect((await extractCandidateDocumentText(docxBytes, "application-pack.docx")).text).toContain("Original");
+    expect(state.get).toHaveBeenCalledWith("owner-a", "pack-1");
+  });
+
+  it("rejects unsupported export formats", async () => {
+    const response = await exportPack(request("/api/v4/packs/pack-1/export?format=exe"), { params: Promise.resolve({ packId: "pack-1" }) });
+    expect(response.status).toBe(400);
   });
 });

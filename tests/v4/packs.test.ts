@@ -65,3 +65,9 @@ describe("Version 4 evidence-constrained packs", () => {
     expect(validatePack(pack)).toEqual([]);
   });
 });
+
+ it("does not manufacture background when approved evidence is empty", () => {
+ const pack = buildApplicationPack({jobTitle:"Analyst",companyName:"Example",requirements:["analysis"],jobSourceUrl:"https://example.com/jobs/1",approvedEvidence:[],candidateSummary:""});
+ expect([pack.coverNote, pack.recruiterEmail, pack.linkedinMessage].join(" ")).not.toMatch(/my (background|approved experience|relevant approved experience) includes|product delivery|relevant product experience/i);
+ expect(pack.requirementGaps).toEqual(["analysis"]);
+ });

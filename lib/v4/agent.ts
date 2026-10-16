@@ -1,6 +1,6 @@
 import { isSafePublicUrl } from "./job-radar";
 
-export type AgentToolMode = "read" | "draft" | "external";
+export type AgentToolMode = "read" | "draft" | "internal" | "external";
 export type AgentToolName =
   | "search_companies"
   | "search_jobs"
@@ -20,6 +20,7 @@ export type AgentToolName =
   | "export_documents"
   | "create_application"
   | "update_application_stage"
+  | "submit_application"
   | "send_outreach"
   | "schedule_communication";
 
@@ -29,31 +30,32 @@ export type AgentTool = {
   requiresApproval: boolean;
   description: string;
   searchUnits: number;
-  costCents: number;
+  estimatedCostCents: number;
   maxOutputTokens: number;
 };
 
 const toolDefinitions: Array<Omit<AgentTool, "requiresApproval">> = [
-  { name: "search_companies", mode: "read", description: "Find owner-scoped companies.", searchUnits: 1, costCents: 0, maxOutputTokens: 700 },
-  { name: "search_jobs", mode: "read", description: "Find verified and discovered jobs.", searchUnits: 1, costCents: 0, maxOutputTokens: 1200 },
-  { name: "refresh_jobs", mode: "read", description: "Refresh an approved source with a budget.", searchUnits: 1, costCents: 2, maxOutputTokens: 1600 },
-  { name: "get_candidate_profile", mode: "read", description: "Read the active candidate profile.", searchUnits: 0, costCents: 0, maxOutputTokens: 900 },
-  { name: "rank_jobs", mode: "read", description: "Compute deterministic fit scores.", searchUnits: 0, costCents: 0, maxOutputTokens: 1200 },
-  { name: "get_job_sources", mode: "read", description: "Read source provenance and snapshots.", searchUnits: 0, costCents: 0, maxOutputTokens: 1000 },
-  { name: "find_public_contacts", mode: "read", description: "Find and classify public contacts.", searchUnits: 1, costCents: 0, maxOutputTokens: 1000 },
-  { name: "inspect_permit_evidence", mode: "read", description: "Read effective-dated permit evidence.", searchUnits: 0, costCents: 0, maxOutputTokens: 700 },
-  { name: "get_hiring_signals", mode: "read", description: "Read dated company signals.", searchUnits: 1, costCents: 0, maxOutputTokens: 1200 },
-  { name: "list_followups", mode: "read", description: "Read due application actions.", searchUnits: 0, costCents: 0, maxOutputTokens: 1000 },
-  { name: "get_usage_budget", mode: "read", description: "Read configured usage limits.", searchUnits: 0, costCents: 0, maxOutputTokens: 300 },
-  { name: "prepare_application_pack", mode: "draft", description: "Prepare an editable pack from approved evidence.", searchUnits: 0, costCents: 0, maxOutputTokens: 1800 },
-  { name: "draft_outreach", mode: "draft", description: "Create an editable outreach draft.", searchUnits: 0, costCents: 0, maxOutputTokens: 900 },
-  { name: "create_action_items", mode: "draft", description: "Create internal action items.", searchUnits: 0, costCents: 0, maxOutputTokens: 900 },
-  { name: "create_interview_pack", mode: "draft", description: "Create an editable interview pack.", searchUnits: 0, costCents: 0, maxOutputTokens: 1800 },
-  { name: "export_documents", mode: "draft", description: "Prepare a private export.", searchUnits: 0, costCents: 0, maxOutputTokens: 700 },
-  { name: "create_application", mode: "external", description: "Create or submit an application record.", searchUnits: 0, costCents: 0, maxOutputTokens: 300 },
-  { name: "update_application_stage", mode: "external", description: "Change the application pipeline.", searchUnits: 0, costCents: 0, maxOutputTokens: 300 },
-  { name: "send_outreach", mode: "external", description: "Send a message through Gmail.", searchUnits: 0, costCents: 0, maxOutputTokens: 300 },
-  { name: "schedule_communication", mode: "external", description: "Schedule an outbound communication.", searchUnits: 0, costCents: 0, maxOutputTokens: 300 },
+  { name: "search_companies", mode: "read", description: "Find owner-scoped companies.", searchUnits: 1, estimatedCostCents: 0, maxOutputTokens: 700 },
+  { name: "search_jobs", mode: "read", description: "Find verified and discovered jobs.", searchUnits: 1, estimatedCostCents: 0, maxOutputTokens: 1200 },
+  { name: "refresh_jobs", mode: "read", description: "Refresh an approved source with a budget.", searchUnits: 1, estimatedCostCents: 2, maxOutputTokens: 1600 },
+  { name: "get_candidate_profile", mode: "read", description: "Read the active candidate profile.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 900 },
+  { name: "rank_jobs", mode: "read", description: "Compute deterministic fit scores.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 1200 },
+  { name: "get_job_sources", mode: "read", description: "Read source provenance and snapshots.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 1000 },
+  { name: "find_public_contacts", mode: "read", description: "Find and classify public contacts.", searchUnits: 1, estimatedCostCents: 0, maxOutputTokens: 1000 },
+  { name: "inspect_permit_evidence", mode: "read", description: "Read effective-dated permit evidence.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 700 },
+  { name: "get_hiring_signals", mode: "read", description: "Read dated company signals.", searchUnits: 1, estimatedCostCents: 0, maxOutputTokens: 1200 },
+  { name: "list_followups", mode: "read", description: "Read due application actions.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 1000 },
+  { name: "get_usage_budget", mode: "read", description: "Read configured usage limits.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 300 },
+  { name: "prepare_application_pack", mode: "draft", description: "Prepare an editable pack from approved evidence.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 1800 },
+  { name: "draft_outreach", mode: "draft", description: "Create an editable outreach draft.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 900 },
+  { name: "create_action_items", mode: "draft", description: "Create internal action items.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 900 },
+  { name: "create_interview_pack", mode: "draft", description: "Create an editable interview pack.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 1800 },
+  { name: "export_documents", mode: "draft", description: "Create private export links for saved application and interview packs.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 900 },
+  { name: "create_application", mode: "internal", description: "Create an internal tracking record for an owner-scoped job; this does not submit an application.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 500 },
+  { name: "update_application_stage", mode: "internal", description: "Update an owner-scoped application tracking stage.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 400 },
+  { name: "submit_application", mode: "external", description: "Submit an application externally; this always requires the dedicated explicit approval workflow.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 300 },
+  { name: "send_outreach", mode: "external", description: "Send a message through Gmail.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 300 },
+  { name: "schedule_communication", mode: "external", description: "Schedule an outbound communication.", searchUnits: 0, estimatedCostCents: 0, maxOutputTokens: 300 },
 ];
 
 export const AGENT_TOOLS: AgentTool[] = toolDefinitions.map((tool) => ({
@@ -74,7 +76,7 @@ export const DEFAULT_AGENT_BUDGET: AgentBudget = {
 export const MAX_AGENT_PLAN_STEPS = 20;
 
 type FieldRule =
-  | { type: "string"; required?: boolean; maxLength?: number; format?: "url" | "date" | "stage" }
+  | { type: "string"; required?: boolean; maxLength?: number; format?: "url" | "date" | "stage" | "exportFormat" }
   | { type: "integer"; required?: boolean; min?: number; max?: number }
   | { type: "stringArray"; required?: boolean; maxItems?: number; maxLength?: number };
 
@@ -97,9 +99,15 @@ const argumentRules: Record<AgentToolName, Record<string, FieldRule>> = {
   draft_outreach: { companyId: { type: "string", required: true, maxLength: 180 }, jobId: { type: "string", maxLength: 180 }, contactId: { type: "string", maxLength: 180 } },
   create_action_items: { dueBefore: { type: "string", maxLength: 30, format: "date" }, limit: { type: "integer", min: 1, max: 20 } },
   create_interview_pack: { applicationId: { type: "string", maxLength: 180 }, interviewId: { type: "string", maxLength: 180 } },
-  export_documents: { documentIds: { type: "stringArray", maxItems: 20, maxLength: 180 } },
-  create_application: { jobId: { type: "string", maxLength: 180 } },
-  update_application_stage: { applicationId: { type: "string", maxLength: 180 }, stage: { type: "string", maxLength: 40, format: "stage" } },
+  export_documents: {
+    applicationPackIds: { type: "stringArray", maxItems: 20, maxLength: 180 },
+    interviewIds: { type: "stringArray", maxItems: 20, maxLength: 180 },
+    documentIds: { type: "stringArray", maxItems: 20, maxLength: 180 },
+    format: { type: "string", maxLength: 10, format: "exportFormat" },
+  },
+  create_application: { jobId: { type: "string", required: true, maxLength: 180 } },
+  update_application_stage: { applicationId: { type: "string", required: true, maxLength: 180 }, stage: { type: "string", required: true, maxLength: 40, format: "stage" }, note: { type: "string", maxLength: 1000 } },
+  submit_application: { jobId: { type: "string", required: true, maxLength: 180 }, applicationId: { type: "string", maxLength: 180 } },
   send_outreach: { draftId: { type: "string", maxLength: 180 }, contactId: { type: "string", maxLength: 180 } },
   schedule_communication: { draftId: { type: "string", maxLength: 180 }, scheduledAt: { type: "string", maxLength: 40, format: "date" } },
 };
@@ -137,6 +145,7 @@ function validateFieldValue(key: string, value: unknown, rule: FieldRule): strin
     if (rule.format === "url" && !isSafePublicUrl(normalized)) return `Argument ${key} must be a safe public HTTP(S) URL.`;
     if (rule.format === "date" && !Number.isFinite(Date.parse(normalized))) return `Argument ${key} must be a valid date.`;
     if (rule.format === "stage" && !applicationStages.has(normalized)) return `Argument ${key} is not a supported application stage.`;
+    if (rule.format === "exportFormat" && !["html", "pdf", "docx"].includes(normalized)) return `Argument ${key} must be html, pdf or docx.`;
     return null;
   }
   if (rule.type === "integer") {
@@ -167,6 +176,9 @@ export function validateAgentToolArguments(name: string, value: unknown): { inpu
       const error = validateFieldValue(key, source[key], rule);
       if (error) return { input: {}, error };
     }
+  }
+  if (tool.name === "export_documents" && !["applicationPackIds", "interviewIds", "documentIds"].some((key) => Array.isArray(source[key]) && (source[key] as unknown[]).length > 0)) {
+    return { input: {}, error: "At least one saved application pack or interview ID is required for export." };
   }
   const input: Record<string, unknown> = {};
   for (const [key, valueAtKey] of Object.entries(source)) {
@@ -206,7 +218,7 @@ export function createDefaultAgentPlan(request: string): AgentPlanStep[] {
   let tool: AgentToolName = "get_candidate_profile";
   let input: Record<string, unknown> = {};
   if (/(send|email|message|contact).*(recruiter|hiring|outreach)|draft outreach/.test(value) && !/draft outreach/.test(value)) tool = "send_outreach";
-  else if (/(submit|apply|application)/.test(value)) tool = "create_application";
+  else if (/(submit|apply for|apply to|application)/.test(value)) tool = "submit_application";
   else if (/(schedule|book).*(communication|message|email|call)/.test(value)) tool = "schedule_communication";
   else if (/(change|update).*(application )?stage/.test(value)) tool = "update_application_stage";
   else if (/(interview|prepare me)/.test(value)) tool = "create_interview_pack";
@@ -285,6 +297,8 @@ export type AgentStep = {
   output: unknown;
   evidence: string[];
   costCents: number;
+  estimatedCostCents: number;
+  actualCostCents: number | null;
   createdAt: string;
 };
 
@@ -308,6 +322,8 @@ export function createAgentStep(stepIndex: number, tool: string, input: unknown,
     output,
     evidence: evidence.filter((value) => /^https?:\/\//.test(value)),
     costCents: Number.isFinite(costCents) ? Math.max(0, Math.trunc(costCents)) : 0,
+    estimatedCostCents: Number.isFinite(costCents) ? Math.max(0, Math.trunc(costCents)) : 0,
+    actualCostCents: null,
     createdAt: new Date().toISOString(),
   };
 }

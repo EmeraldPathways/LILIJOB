@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     if (!created || typeof created.run.id !== "string") return errorResponse(500, "AGENT_RUN_CREATE_FAILED", "The agent run could not be saved.");
     const runId = created.run.id;
     const checkpoint = { version: 1, plan: planResult.steps, nextPlanIndex: 0, attempts: {} };
-    const cost = { inputTokens: initialTokens, outputTokens: 0, totalTokens: initialTokens, searches: 0, costCents: 0 };
+    const cost = { inputTokens: initialTokens, outputTokens: 0, totalTokens: initialTokens, searches: 0, estimatedCostCents: 0, actualCostCents: null };
     const initialized = await updateAgentRun(user.userId, runId, { status: "queued", checkpoint, cost });
     return Response.json({ run: initialized?.run ?? created.run, steps: initialized?.steps ?? created.steps }, { status: 201 });
   } finally {

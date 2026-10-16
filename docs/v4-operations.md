@@ -45,3 +45,15 @@ For a bad import, stop enrichment, export the affected source rows, compare the 
 ## Current security blocker
 
 `pnpm audit --prod --audit-level high` reports 16 vulnerabilities, including critical/high advisories in the pinned Next.js, `xlsx`, Browserslist, source-map-js and sharp dependency paths. The branch is not production-ready until those dependencies are patched/replaced or a security owner records a risk decision.
+
+## Completion update — 2026-10-16
+
+This update supersedes the earlier implementation-only status and security paragraph above.
+
+- Candidate uploads parse PDF/DOCX/TXT; original files remain private. Application/interview export supports `?format=pdf`, `?format=docx`, default HTML.
+- Internal `create_application` and `update_application_stage` agent tools update local tracking records. External send/submit/schedule actions remain held. Provider cost displays are estimates, with actual cost unmeasured.
+- Job Radar opt-in schedules use `job_radar_schedules`, selected saved companies only, a bounded durable cursor and lease. `POST /api/v4/schedules/job-radar/run-due` runs the signed-in owner's due work. The service dispatcher requires `V4_JOB_RADAR_SCHEDULE_TOKEN`; an external scheduler must hold it securely. Saving cadence alone does not provision a cloud trigger.
+- Saved Searches and Notifications pages persist local search definitions and in-app digest preferences. There is no automatic email/push digest delivery.
+- Official permit source refresh captures URL/date/hash/availability. It deliberately does not overwrite approved rules or claim legal eligibility from successful HTTP retrieval.
+- Release operations are disabled unless a short-lived `RELEASE_OPERATIONS_TOKEN`, owner scope and expiry are configured. Backup omits Gmail tokens/API secrets and preserves original R2 uploads. Synthetic release tests clean only their generated owner prefix. Disable these credentials after production verification.
+- Dependency remediation removes previous high/critical production findings. Mammoth's browser parser does not use its CLI `argparse`/`sprintf-js` path; the remaining moderate CLI advisory is not a runtime format-string input path in this app. Do not expose the Mammoth CLI as a service.

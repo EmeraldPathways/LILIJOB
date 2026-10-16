@@ -1,69 +1,54 @@
-# Dublin Tech Compass Version 4 release report
+# Dublin Tech Compass V4 — release candidate, 16 October 2026
 
-Status: **NOT RELEASED — implementation complete locally; release gates remain blocked**
+User authorised completion and production deployment. Feature branch: `version4-interview-engine`. Existing public Site audience is preserved; all private records continue to require authenticated owner access.
 
-Branch: `version4-interview-engine`
-Base: `b1b2e146adf07d09d28f78015ea9560ed7607575`
-Implementation commit: `079eb2e` (`feat: implement Dublin Tech Compass Version 4`)
-Live site currently associated with the project: `https://dublin-tech-compass.emeraldpathways.chatgpt.site`
+## Implementation
 
-The branch was created before product changes. Existing company records and source values were preserved. No production import, migration, enrichment, Gmail send or production deployment was performed.
+All ten feature areas have persistence, API and UI implementations. This completion pass added PDF/DOCX/TXT extraction; real PDF/DOCX/HTML exports; saved searches; in-app digest preferences; selected-company opt-in scheduled queues; bounded official-source contact/signal collection; trusted ATS and role-detail verification; internal agent CRM tools; durable step/cancellation recovery; truthful estimated-cost displays; and candidate/mobile workflow repairs.
 
-## Executive result
+No imports, ordinary record views or local saved searches trigger paid research. Routine enrichment remains low reasoning; assistant remains medium. Emails require individual review/approval; no release test contacts a recruiter.
 
-The ten Version 4 feature areas have local implementations, persistence paths, route coverage, UI surfaces and automated tests. The application is not being declared fully accepted because several plan requirements need an authenticated staging/live environment, real provider credentials or explicit user approval. Those gates are recorded below rather than inferred from local unit tests.
+## Data safety
 
-## Implemented locally
+Before schema changes, an expiring maintenance operation saved and read back a 1,453,462-byte private R2 backup. Latest pre-migration backup on 16 October: SHA-256 `19b5cb929eb7edf93dc7693903ad7da0fc3bc22b1eb75c2ae62a9bebf1436e41`.
 
-1. Personal opportunity ranking: owner-scoped candidate profile/evidence records, versioning, deterministic 0–100 ranking, hard constraints, explanations, star/dismiss/override and snapshot-aware inputs.
-2. Live Job Radar: safe official-source handling, JSON-LD/anchor parsing, Greenhouse/Lever feeds, discovery runs, snapshots/diffs, invalid-source reporting, cancellation/retry and two-miss removal hysteresis.
-3. Recruiter and hiring-team finder: sourced public contacts, classification, quality, correction and do-not-contact controls, plus hiring-signal scoring, expiry, deduplication and suppression.
-4. Application CRM: canonical stages, immutable events, duplicate protection, follow-up actions, Kanban/table/mobile-safe controls, pack linkage and CSV export.
-5. AI application packs: evidence-constrained deterministic generation, optional OpenAI low-reasoning generation, approved-evidence and numeric-claim validation, word caps and deterministic fallback.
-6. Sector pitch engine: substantive E-commerce, Startups, Fintech and Work Permit playbooks with approved evidence references and versioned edits.
-7. Hiring-trigger intelligence: dated possible-signal labels, reliability/relevance scoring, primary-source preference, expiry and correction/suppression routes.
-8. Dublin and permit reality: effective-dated rules, Dublin evidence, explicit unknown/cannot-determine states, owner-scoped evaluation and admin-restricted rule changes.
-9. Interview preparation: Europe/Dublin schedule validation, UTC storage, source-backed brief, predictions, approved STAR evidence, editable practice Q&A/self-evaluation, outcome and follow-up approval, printable export.
-10. Command Centre and agent: database-backed KPIs/actions/funnel, 20 validated tools, prompt-injection markers, search/token/cost/step budgets, checkpoints, cancel/resume/retry and visible controls.
+Production baseline: 769 companies, 991 category memberships, one import. Memberships: Fintech 316, Tech Permits 270, Ecommerce 155, Startups 250. Original uploads are preserved. Backup excludes Gmail credential/token tables and API secrets.
 
-The existing sector workspace, Sheet/Detailed views, on-demand company enrichment, imports, settings, Gmail area and sidebar navigation were retained and integrated with the new surfaces. The sidebar now keeps pages beside the shell and includes Ecommerce, Startups, Tech Permits and Fintech.
+V4 migrations are additive: `0003_burly_nick_fury.sql`, `0004_jazzy_warstar.sql`, `0005_v4_research_schedules.sql`. No release request creates application tables.
 
-## Data and persistence evidence
+## Observed local checks
 
-- Supplied workbook was audited read-only: 991 source rows; Fintech 316, Tech Permits 270, Ecommerce 155 and Startups 250.
-- Existing reconciliation contains 769 accepted companies, 222 duplicate source rows and 0 stored import errors. Source fields remain preserved and existing records remain `not-enriched` until explicitly enriched.
-- Version 4 uses additive schema objects and a repeat-safe migration runner containing 59 DDL/index statements. Fresh-database, repeat-migration, persistence, owner-isolation and backfill tests pass locally.
-- A staging backup/count manifest and staging migration have not been run because no staging access was available. Production was not mutated.
+- 95 test files, 376 tests passed, one skipped on the final integrated run to this point.
+- TypeScript passed.
+- Production build passed.
+- ESLint: no errors; schedule mock parameter warnings corrected before packaging.
+- Production dependency audit: zero high/critical findings; one moderate `sprintf-js` advisory in Mammoth's unused command-line dependency chain. The Worker uses the browser parser, not that CLI.
+- Isolated synthetic-owner integration checks cover company, verified job snapshot, candidate evidence, ranking, owner isolation, application stage, deterministic pack, interview, dashboard, safe agent step and actual PDF/DOCX outputs. Both normal and interrupted-flow cleanup are tested.
 
-## Test evidence
+## Explicit acceptance limits
 
-Executed locally on 2026-10-15:
+- Desktop/mobile browser click-through is BLOCKED: this managed environment exposes no supported control-browser skill. Rendered-markup/responsive tests are not browser evidence.
+- Gmail account configuration exists, but connected-account status and a controlled send must be verified separately. Deployment does not authorise sending a test message.
+- Additional job source sampling was blocked by automatic approval review because it would fetch private-workbook-derived external destinations. Prior internal evidence is retained outside the source repository. Unverified links remain unverified; domain-marketplace/partner URLs are rejected. A 10-role candidate-specific live ranking review is not claimed.
+- Daily/weekly scope and continuation are implemented. An unattended external scheduler still needs to call the protected dispatcher with its secret. The owner can run the selected due queue from Job Radar; saving a cadence does not create a cloud trigger.
+- Official permit-source retrieval records availability/hash, not legal approval. Personal eligibility remains evidence-based and reviewable.
+- Actual provider spend is not measured; the agent labels budget amounts as estimates.
+- CodeRabbit could not authenticate (`environment_unsupported`: browser login unavailable). No CodeRabbit review result is claimed.
 
-- `pnpm test`: **PASS — 77 test files, 292 passed, 1 skipped**.
-- `pnpm exec tsc --noEmit --pretty false`: **PASS**.
-- `pnpm lint`: **PASS**.
-- `pnpm build`: **PASS — Vinext production build completed and included the Version 4 page/API routes**.
-- `git diff --check`: **PASS**.
-- Import/security/UI focused checks: **PASS — 7 files, 23 passed, 1 skipped**.
-- Agent focused checks: **PASS — 3 files, 24 passed**.
-- Interview focused checks: **PASS — 3 files, 19 passed**.
-- Permit/signal/intelligence focused checks: **PASS — 5 files, 32 passed**.
+## Deployment receipt
 
-The detailed command record is in [`docs/v4-test-evidence.md`](./v4-test-evidence.md). The acceptance matrix is in [`docs/v4-feature-acceptance.md`](./v4-feature-acceptance.md), and the phase checklist is in [`docs/v4-execution-checklist.md`](./v4-execution-checklist.md).
+Pending exact-source packaging, migration/deployment, isolated production self-test and backup comparison. Record observed responses in the completion ledger; do not infer success from local checks.
 
-## Genuine blockers and unverified gates
+### Observed production receipt — 16 October 2026
 
-- **Desktop/mobile browser QA:** not claimed. The available browser session redirected the live URL to OpenAI authentication, and no authenticated staging URL was available. Required widths are 320, 375, 390, 768, 1024, 1440 and 1920px.
-- **Live Job Radar evidence:** not claimed. The required sample of 20 permitted official careers pages and 10 current ranked roles needs reachable live/staging sources.
-- **Gmail:** not claimed. A connected OAuth account and explicit authorization for one controlled test-inbox message are required. No recruiter was contacted.
-- **Staging/release:** not claimed. Migration, backup/count verification, deployment and post-release smoke testing need staging access and explicit production deployment authorization.
-- **Local browser smoke:** Wrangler preview was blocked by the environment error `uv_interface_addresses returned Unknown system error 1`; the local automated route and repository tests remain valid, but this is not browser evidence.
-- **Security gate:** `pnpm audit --prod --audit-level high` reported 16 vulnerabilities: 2 low, 6 moderate, 7 high and 1 critical. Reported production paths include Next.js 16.3.4, SheetJS `xlsx@0.18.5`, Browserslist, source-map-js and sharp. No release claim is made until patched versions or a documented risk decision are accepted.
+- Site version 20 deployed successfully from `777a9b19f19b5ce8db7c9bb16e5d15be6bf5c6c4`.
+- URL: https://dublin-tech-compass.emeraldpathways.chatgpt.site
+- All additive migrations are present in production; readback found all new V4 tables.
+- Protected production self-test returned HTTP 200, 11/11 steps passed: D1, synthetic company, verified job snapshot, approved candidate evidence, ranking score 76, application owner isolation/stage, deterministic application pack, interview/pack, dashboard, safe agent run, real PDF/DOCX generation.
+- Cleanup confirmed zero remaining synthetic-owner rows.
+- Live OpenAI smoke returned HTTP 200 for `gpt-5.6-luna`, low reasoning: 13 input + 5 output = 18 tokens; no personal data was sent.
+- Post-migration backup comparison returned HTTP 200: companies 769/769, memberships 991/991, imports 1/1, every complete row preserved byte-for-byte after canonical ordering.
+- Gmail configuration present; zero connected accounts. No OAuth sign-in or email send is claimed.
+- Browser QA, additional external-source sampling, 10-role candidate review, controlled Gmail send and unattended cron hookup remain outstanding as documented. Deployment succeeded; strict full-plan acceptance remains partial for those checks.
 
-## Deployment status
-
-No deployment was performed. The existing live URL has not been promoted from this branch, and no live verification is claimed. Deployment requires explicit authorization plus staging migration proof, browser/provider QA, security disposition and post-release count verification.
-
-## Handoff
-
-The implementation is committed locally and is ready to push as `version4-interview-engine`. The branch should be reviewed and deployed only after the blockers above are resolved.
+Release-only operational credentials will be removed after verification. The final documentation publication retains the same application code and recorded data.
