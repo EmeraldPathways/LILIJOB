@@ -41,7 +41,7 @@ export const jobRadarSchedules = sqliteTable("job_radar_schedules", {
 }, (table) => ({ uniqueOwner: uniqueIndex("job_radar_schedules_owner_idx").on(table.ownerId), due: index("job_radar_schedules_due_idx").on(table.enabled, table.nextRunAt, table.leaseUntil) }));
 
 export const jobMatches = sqliteTable("job_matches", {
-  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), jobId: text("job_id").notNull(), profileId: text("profile_id").notNull(), scoringVersion: text("scoring_version").notNull(), score: integer("score").notNull(), confidence: text("confidence").notNull(), dimensionsJson: text("dimensions_json").notNull().default("{}"), hardConstraintsJson: text("hard_constraints_json").notNull().default("{}"), explanationJson: text("explanation_json").notNull().default("{}"), dismissed: integer("dismissed", { mode: "boolean" }).notNull().default(false), starred: integer("starred", { mode: "boolean" }).notNull().default(false), overrideScore: integer("override_score"), overrideReason: text("override_reason"), scoredAt: text("scored_at").notNull(), ...t,
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), jobId: text("job_id").notNull(), profileId: text("profile_id").notNull(), profileVersion: integer("profile_version").notNull().default(1), scoringConfigVersion: text("scoring_config_version").notNull().default("v5-default-1"), scoringVersion: text("scoring_version").notNull(), score: integer("score").notNull(), confidence: text("confidence").notNull(), dimensionsJson: text("dimensions_json").notNull().default("{}"), hardConstraintsJson: text("hard_constraints_json").notNull().default("{}"), explanationJson: text("explanation_json").notNull().default("{}"), dismissed: integer("dismissed", { mode: "boolean" }).notNull().default(false), starred: integer("starred", { mode: "boolean" }).notNull().default(false), overrideScore: integer("override_score"), overrideReason: text("override_reason"), scoredAt: text("scored_at").notNull(), ...t,
 }, (table) => ({ uniqueMatch: uniqueIndex("job_matches_owner_job_profile_version_idx").on(table.ownerId, table.jobId, table.profileId, table.scoringVersion), byScore: index("job_matches_owner_score_idx").on(table.ownerId, table.score) }));
 
 export const companySignals = sqliteTable("company_signals", {
@@ -61,11 +61,11 @@ export const applicationEvents = sqliteTable("application_events", {
 }, (table) => ({ byApplication: index("application_events_app_idx").on(table.ownerId, table.applicationId, table.eventAt) }));
 
 export const outreachDrafts = sqliteTable("outreach_drafts", {
-  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), applicationId: text("application_id"), companyId: text("company_id").notNull(), contactId: text("contact_id"), channel: text("channel").notNull().default("gmail"), subject: text("subject").notNull(), body: text("body").notNull(), generationJson: text("generation_json").notNull().default("{}"), attachmentDocumentId: text("attachment_document_id"), approvalState: text("approval_state").notNull().default("draft"), approvedAt: text("approved_at"), ...t,
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), applicationId: text("application_id"), companyId: text("company_id").notNull(), contactId: text("contact_id"), channel: text("channel").notNull().default("gmail"), subject: text("subject").notNull(), body: text("body").notNull(), generationJson: text("generation_json").notNull().default("{}"), attachmentDocumentId: text("attachment_document_id"), revision: integer("revision").notNull().default(1), approvalFingerprint: text("approval_fingerprint"), approvalState: text("approval_state").notNull().default("draft"), approvedAt: text("approved_at"), ...t,
 }, (table) => ownerIndex("outreach_drafts", table));
 
 export const outreachEvents = sqliteTable("outreach_events", {
-  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), draftId: text("draft_id").notNull(), applicationId: text("application_id"), providerMessageId: text("provider_message_id"), threadId: text("thread_id"), sendState: text("send_state").notNull(), error: text("error"), dedupKey: text("dedup_key").notNull(), responseCategory: text("response_category"), approvedBy: text("approved_by"), approvedAt: text("approved_at"), sentAt: text("sent_at"), ...t,
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), draftId: text("draft_id").notNull(), applicationId: text("application_id"), providerMessageId: text("provider_message_id"), threadId: text("thread_id"), sendState: text("send_state").notNull(), error: text("error"), dedupKey: text("dedup_key").notNull(), payloadFingerprint: text("payload_fingerprint"), responseCategory: text("response_category"), approvedBy: text("approved_by"), approvedAt: text("approved_at"), sentAt: text("sent_at"), ...t,
 }, (table) => ({ uniqueSend: uniqueIndex("outreach_events_owner_dedup_idx").on(table.ownerId, table.dedupKey), byDraft: index("outreach_events_draft_idx").on(table.ownerId, table.draftId) }));
 
 export const applicationPacks = sqliteTable("application_packs", {
@@ -112,6 +112,46 @@ export const settingsVersions = sqliteTable("settings_versions", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), namespace: text("namespace").notNull(), version: integer("version").notNull(), settingsJson: text("settings_json").notNull(), createdBy: text("created_by").notNull(), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({ uniqueVersion: uniqueIndex("settings_versions_owner_namespace_version_idx").on(table.ownerId, table.namespace, table.version) }));
 
+export const providerUsageEvents = sqliteTable("provider_usage_events", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), operationId: text("operation_id").notNull(), runId: text("run_id"), stepId: text("step_id"), attemptId: text("attempt_id").notNull(), provider: text("provider").notNull(), model: text("model"), status: text("status").notNull(), inputTokens: integer("input_tokens"), outputTokens: integer("output_tokens"), reasoningTokens: integer("reasoning_tokens"), cachedTokens: integer("cached_tokens"), searchUnits: integer("search_units"), priceVersion: text("price_version"), estimatedCostMinor: integer("estimated_cost_minor"), measuredCostMinor: integer("measured_cost_minor"), currency: text("currency").notNull().default("EUR"), metadataJson: text("metadata_json").notNull().default("{}"), observedAt: text("observed_at").notNull(), ...t,
+}, (table) => ({ uniqueAttempt: uniqueIndex("provider_usage_owner_attempt_idx").on(table.ownerId, table.attemptId), byOwner: index("provider_usage_owner_observed_idx").on(table.ownerId, table.observedAt) }));
+
+export const usageBudgets = sqliteTable("usage_budgets", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), scope: text("scope").notNull(), periodKey: text("period_key").notNull(), ceilingMinor: integer("ceiling_minor").notNull(), reservedMinor: integer("reserved_minor").notNull().default(0), usedMinor: integer("used_minor").notNull().default(0), currency: text("currency").notNull().default("EUR"), ...t,
+}, (table) => ({ uniquePeriod: uniqueIndex("usage_budgets_owner_scope_period_idx").on(table.ownerId, table.scope, table.periodKey), byOwner: index("usage_budgets_owner_idx").on(table.ownerId, table.periodKey) }));
+
+export const usageReservations = sqliteTable("usage_reservations", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), operationId: text("operation_id").notNull(), scope: text("scope").notNull(), periodKey: text("period_key").notNull(), amountMinor: integer("amount_minor").notNull(), status: text("status").notNull().default("reserved"), ...t,
+}, (table) => ({ uniqueOperation: uniqueIndex("usage_reservations_owner_operation_idx").on(table.ownerId, table.operationId), byBudget: index("usage_reservations_budget_idx").on(table.ownerId, table.scope, table.periodKey) }));
+
+export const scheduledTaskRuns = sqliteTable("scheduled_task_runs", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), scheduleId: text("schedule_id").notNull(), dueSlot: text("due_slot").notNull(), scopeVersion: text("scope_version").notNull(), checkpointJson: text("checkpoint_json").notNull().default("{}"), leaseUntil: text("lease_until"), status: text("status").notNull().default("queued"), attempts: integer("attempts").notNull().default(0), error: text("error"), startedAt: text("started_at"), finishedAt: text("finished_at"), ...t,
+}, (table) => ({ uniqueSlot: uniqueIndex("scheduled_task_runs_owner_slot_idx").on(table.ownerId, table.scheduleId, table.dueSlot), due: index("scheduled_task_runs_due_idx").on(table.status, table.dueSlot, table.leaseUntil) }));
+
+export const notificationEvents = sqliteTable("notification_events", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), dedupKey: text("dedup_key").notNull(), type: text("type").notNull(), sourceEntityId: text("source_entity_id"), sourceVersion: text("source_version"), severity: text("severity").notNull().default("info"), state: text("state").notNull().default("open"), payloadJson: text("payload_json").notNull().default("{}"), dueAt: text("due_at"), readAt: text("read_at"), dismissedAt: text("dismissed_at"), ...t,
+}, (table) => ({ uniqueEvent: uniqueIndex("notification_events_owner_dedup_idx").on(table.ownerId, table.dedupKey), byOwner: index("notification_events_owner_state_idx").on(table.ownerId, table.state, table.createdAt) }));
+
+export const cvEditProposals = sqliteTable("cv_edit_proposals", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), applicationId: text("application_id"), profileId: text("profile_id").notNull(), masterDocumentId: text("master_document_id").notNull(), jobSnapshotId: text("job_snapshot_id"), baseProfileVersion: integer("base_profile_version").notNull(), proposalVersion: integer("proposal_version").notNull(), status: text("status").notNull().default("draft"), changesJson: text("changes_json").notNull().default("[]"), warningsJson: text("warnings_json").notNull().default("[]"), artifactDocumentId: text("artifact_document_id"), ...t,
+}, (table) => ({ uniqueVersion: uniqueIndex("cv_edit_proposals_owner_version_idx").on(table.ownerId, table.profileId, table.masterDocumentId, table.proposalVersion), byApplication: index("cv_edit_proposals_application_idx").on(table.ownerId, table.applicationId, table.updatedAt) }));
+
+export const outreachAttachments = sqliteTable("outreach_attachments", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), draftId: text("draft_id").notNull(), documentId: text("document_id").notNull(), objectKey: text("object_key").notNull(), sha256: text("sha256").notNull(), filename: text("filename").notNull(), mimeType: text("mime_type").notNull(), bytes: integer("bytes").notNull(), approvalFingerprint: text("approval_fingerprint"), ...t,
+}, (table) => ({ byDraft: index("outreach_attachments_draft_idx").on(table.ownerId, table.draftId), uniqueDocument: uniqueIndex("outreach_attachments_document_idx").on(table.ownerId, table.draftId, table.documentId) }));
+
+export const applicationTasks = sqliteTable("application_tasks", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), applicationId: text("application_id").notNull(), type: text("type").notNull(), reason: text("reason").notNull(), dueAt: text("due_at"), status: text("status").notNull().default("open"), snoozedUntil: text("snoozed_until"), dedupKey: text("dedup_key").notNull(), ...t,
+}, (table) => ({ uniqueTask: uniqueIndex("application_tasks_owner_dedup_idx").on(table.ownerId, table.dedupKey), byDue: index("application_tasks_owner_due_idx").on(table.ownerId, table.status, table.dueAt) }));
+
+export const candidateWorkPermissions = sqliteTable("candidate_work_permissions", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), profileId: text("profile_id").notNull(), permissionType: text("permission_type").notNull(), effectiveFrom: text("effective_from").notNull(), effectiveTo: text("effective_to"), weeklyHours: integer("weekly_hours"), conditionsJson: text("conditions_json").notNull().default("[]"), evidenceJson: text("evidence_json").notNull().default("[]"), confirmationStatus: text("confirmation_status").notNull().default("unconfirmed"), ...t,
+}, (table) => ({ byProfile: index("candidate_work_permissions_profile_idx").on(table.ownerId, table.profileId, table.effectiveFrom) }));
+
+export const pitchUsages = sqliteTable("pitch_usages", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), pitchId: text("pitch_id").notNull(), applicationId: text("application_id"), outreachDraftId: text("outreach_draft_id"), variant: text("variant").notNull(), outcome: text("outcome"), recordedAt: text("recorded_at").notNull(), ...t,
+}, (table) => ({ byPitch: index("pitch_usages_owner_pitch_idx").on(table.ownerId, table.pitchId, table.recordedAt) }));
+
 export const permitRules = sqliteTable("permit_rules", {
   id: text("id").primaryKey(), ruleSet: text("rule_set").notNull(), effectiveFrom: text("effective_from").notNull(), effectiveTo: text("effective_to"), sourceUrl: text("source_url").notNull(), title: text("title").notNull(), rulesJson: text("rules_json").notNull(), checkedAt: text("checked_at").notNull(), ...t,
 }, (table) => ({ uniqueRule: uniqueIndex("permit_rules_set_effective_idx").on(table.ruleSet, table.effectiveFrom) }));
@@ -120,5 +160,5 @@ export const permitEvaluations = sqliteTable("permit_evaluations", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), companyId: text("company_id").notNull(), jobId: text("job_id"), ruleId: text("rule_id"), status: text("status").notNull(), labelsJson: text("labels_json").notNull().default("[]"), inputsJson: text("inputs_json").notNull().default("{}"), explanation: text("explanation").notNull(), sourceUrl: text("source_url"), evaluatedAt: text("evaluated_at").notNull(), ...t,
 }, (table) => ({ byCompany: index("permit_evaluations_company_idx").on(table.ownerId, table.companyId, table.evaluatedAt) }));
 
-export const v4Tables = { candidateProfiles, candidateDocuments, experienceEvidence, jobSnapshots, jobDiscoveryRuns, jobRadarSchedules, jobMatches, companySignals, recruitmentContacts, applications, applicationEvents, outreachDrafts, outreachEvents, applicationPacks, sectorPitches, interviews, interviewPacks, dailyActionItems, jobSearchMetricsDaily, notificationPreferences, userActivityAudit, agentRuns, agentSteps, settingsVersions, permitRules, permitEvaluations };
+export const v4Tables = { candidateProfiles, candidateDocuments, experienceEvidence, jobSnapshots, jobDiscoveryRuns, jobRadarSchedules, jobMatches, companySignals, recruitmentContacts, applications, applicationEvents, outreachDrafts, outreachEvents, applicationPacks, sectorPitches, interviews, interviewPacks, dailyActionItems, jobSearchMetricsDaily, notificationPreferences, userActivityAudit, agentRuns, agentSteps, settingsVersions, permitRules, permitEvaluations, providerUsageEvents, usageBudgets, usageReservations, scheduledTaskRuns, notificationEvents, cvEditProposals, outreachAttachments, applicationTasks, candidateWorkPermissions, pitchUsages };
 export type V4Tables = typeof v4Tables;

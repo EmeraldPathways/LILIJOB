@@ -1,4 +1,5 @@
 import type { ConfidenceLevel, CompanyCategory, SourceType } from "../domain/types";
+import type { UsageContext } from "../v5/usage/provider";
 
 export type SearchPurpose =
   | "official-profile"
@@ -13,6 +14,7 @@ export type SearchRequest = {
   query: string;
   purpose: SearchPurpose;
   maxResults?: number;
+  usage?: UsageContext;
 };
 
 export type SearchResult = {

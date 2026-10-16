@@ -29,6 +29,17 @@ type ResponsesBody = {
   status?: unknown;
   output_text?: unknown;
   output?: unknown;
+  usage?: unknown;
+};
+
+export type AIUsageContext = {
+  ownerId: string;
+  operationId: string;
+  scope?: "assistant" | "enrichment" | "search" | "agent" | string;
+  runId?: string | null;
+  stepId?: string | null;
+  reservationMinor?: number;
+  ceilingMinor?: number;
 };
 
 export function responseText(body: ResponsesBody): string {
@@ -79,10 +90,32 @@ export function isAIConfigured(): boolean {
   return Boolean(env.OPENAI_API_KEY?.trim());
 }
 
-export async function askOpenAI(input: string, options: { model?: string; reasoningEffort?: OpenAIReasoningEffort; maxOutputTokens?: number; fetchImpl?: typeof fetch } = {}): Promise<{ text: string; raw: ResponsesBody }> {
+export async function askOpenAI(input: string, options: { model?: string; reasoningEffort?: OpenAIReasoningEffort; maxOutputTokens?: number; fetchImpl?: typeof fetch; usage?: AIUsageContext } = {}): Promise<{ text: string; raw: ResponsesBody }> {
   const apiKey = env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new AIConfigurationError();
   const fetchImpl = options.fetchImpl ?? fetch;
+  const usageContext = options.usage ? { ...options.usage, scope: options.usage.scope ?? "assistant" } : null;
+  const usage = usageContext ? await (async () => {
+    const { reserveProviderUsage } = await import("../v5/usage/provider");
+    return reserveProviderUsage(usageContext);
+  })() : null;
+  const settle = async (status: string, raw: ResponsesBody | null, error?: unknown) => {
+    if (!usage || !usageContext) return;
+    const { extractResponsesUsage } = await import("../v5/usage/ledger");
+    const { estimateOpenAICostMinor, settleProviderUsage } = await import("../v5/usage/provider");
+    const tokens = extractResponsesUsage(raw);
+    await settleProviderUsage(usageContext, usage, {
+      attemptId: `${usageContext.operationId}:${crypto.randomUUID()}`,
+      provider: "openai-responses",
+      model: options.model ?? configuredModel(),
+      status,
+      ...tokens,
+      estimatedCostMinor: estimateOpenAICostMinor(tokens.inputTokens, tokens.outputTokens),
+      measuredCostMinor: null,
+      priceVersion: "configurable-estimate-v1",
+      metadata: error instanceof Error ? { error: error.message } : {},
+    });
+  };
   let response: Response;
   try {
     response = await fetchImpl("https://api.openai.com/v1/responses", {
@@ -97,13 +130,27 @@ export async function askOpenAI(input: string, options: { model?: string; reason
       signal: AbortSignal.timeout(45_000),
     });
   } catch (error) {
+    await settle("failed", null, error);
     throw new AIProviderError(error instanceof Error ? error.message : "The OpenAI request failed.", true);
   }
-  if (response.status === 429) throw new AIProviderError("OpenAI rate limit reached. Try again shortly.", true);
-  if (!response.ok) throw new AIProviderError(`OpenAI returned HTTP ${response.status}.`, response.status >= 500);
+  if (response.status === 429) {
+    await settle("rate-limited", null);
+    throw new AIProviderError("OpenAI rate limit reached. Try again shortly.", true);
+  }
+  if (!response.ok) {
+    await settle("failed", null);
+    throw new AIProviderError(`OpenAI returned HTTP ${response.status}.`, response.status >= 500);
+  }
   const raw = await response.json() as ResponsesBody;
-  if (isIncompleteResponse(raw)) throw new AIProviderError("OpenAI returned an incomplete answer.");
+  if (isIncompleteResponse(raw)) {
+    await settle("incomplete", raw);
+    throw new AIProviderError("OpenAI returned an incomplete answer.");
+  }
   const text = responseText(raw);
-  if (!text) throw new AIProviderError("OpenAI returned an empty answer.");
+  if (!text) {
+    await settle("empty", raw);
+    throw new AIProviderError("OpenAI returned an empty answer.");
+  }
+  await settle("completed", raw);
   return { text, raw };
 }

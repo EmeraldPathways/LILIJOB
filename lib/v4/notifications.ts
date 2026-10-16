@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../../db";
 import { notificationPreferences } from "../../db/schema-v4";
 import { listSavedSearches } from "./saved-searches";
+import { listNotificationEvents } from "../v5/scheduler";
 
 export type DigestCadence = {
   frequency: "daily" | "weekly";
@@ -143,6 +144,7 @@ export async function buildInternalDigest(ownerId: string, at = new Date()) {
   const optedIn = preferences.digestEnabled && preferences.consent;
   const quietHoursActive = optedIn && isWithinQuietHours(at, preferences.timezone, preferences.quietStart, preferences.quietEnd);
   const searches = optedIn ? await listSavedSearches(ownerId) : [];
+  const events = optedIn ? await listNotificationEvents(ownerId, { state: "open", limit: 50 }) : [];
   const items = searches.map((search) => ({
     searchId: search.id,
     name: search.name,
@@ -164,6 +166,7 @@ export async function buildInternalDigest(ownerId: string, at = new Date()) {
       ? `${items.length} saved searches; ${savedMatches} matches in ${withSavedResults} most recent saved runs.`
       : "In-app digest is off until you opt in.",
     items,
+    events: events.map((event) => ({ id: event.id, type: event.type, severity: event.severity, payload: event.payloadJson, dueAt: event.dueAt, createdAt: event.createdAt })),
     delivery: "This is an in-app preview. Nothing is sent outside the workspace.",
   };
 }

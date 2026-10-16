@@ -62,4 +62,26 @@ describe("Version 4 opportunity persistence", () => {
     expect(ranked?.[0]?.match.explanationJson).toContain("analytics");
     expect(ranked?.[0]?.match.score).toBeGreaterThan(0);
   });
+
+  it("uses only approved evidence, normalizes explicit annual salary and persists profile/config versions", async () => {
+    const { getOrCreateCandidateProfile, createExperienceEvidence, updateCandidateProfile } = await import("../../lib/v4/repository");
+    const { rankAndPersistOpportunities } = await import("../../lib/v4/opportunities");
+    const profile = await getOrCreateCandidateProfile("owner-a", { name: "Versioned evidence", constraints: { skills: ["analytics"], minimumSalary: 60_000 } });
+    await createExperienceEvidence("owner-a", profile.id, { title: "Approved", statement: "Owned analytics experimentation", metric: "18% lift", approved: true });
+    await createExperienceEvidence("owner-a", profile.id, { title: "Unapproved", statement: "Quantum computing expertise", approved: false });
+    sqlite.prepare("INSERT INTO job_snapshots (id, owner_id, job_id, content_hash, description, pay_range, currency, requirements_json, location, work_model, last_seen_at, first_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run("snapshot-salary", "owner-a", "job-a", "hash-salary", "Own analytics experimentation", "€70,000–€80,000 per year", "EUR", JSON.stringify(["analytics"]), "Dublin", "hybrid", "2026-10-15T12:00:00.000Z", "2026-10-15T12:00:00.000Z");
+    const ranked = await rankAndPersistOpportunities("owner-a", profile.id);
+    const first = ranked?.[0]?.match;
+    expect(first?.profileVersion).toBe(profile.approvedVersion);
+    expect(first?.scoringConfigVersion).toBe("v5-ranking-config-1");
+    expect(first?.scoringVersion).toContain(`profile-${profile.approvedVersion}`);
+    const explanation = JSON.parse(first?.explanationJson ?? "{}") as { evidenceIds?: string[]; salary?: { min: number; max: number; period: string }; evidenceUsed?: string[] };
+    expect(explanation.evidenceIds).toHaveLength(1);
+    expect(explanation.evidenceUsed?.join(" ")).not.toMatch(/Quantum/i);
+    expect(explanation.salary).toMatchObject({ min: 70_000, max: 80_000, period: "year" });
+    await updateCandidateProfile("owner-a", profile.id, { constraints: { skills: ["analytics"], minimumSalary: 75_000 } });
+    const reranked = await rankAndPersistOpportunities("owner-a", profile.id);
+    expect(reranked?.[0]?.match.profileVersion).toBe(profile.approvedVersion + 1);
+    expect(reranked?.[0]?.match.starred).toBe(first?.starred);
+  });
 });

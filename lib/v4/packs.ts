@@ -125,6 +125,7 @@ export async function buildApplicationPackWithAI(input: {
   jobSourceUrl: string;
   approvedEvidence: ApprovedEvidence[];
   candidateSummary: string;
+  usageOwnerId?: string;
 }): Promise<ApplicationPack> {
   const fallback = buildApplicationPack(input);
   const { askOpenAI, configuredModel } = await import("../ai/client");
@@ -138,7 +139,7 @@ export async function buildApplicationPackWithAI(input: {
     `Candidate summary: ${input.candidateSummary}`,
     `Approved evidence: ${JSON.stringify(evidence)}`,
   ].join("\n\n");
-  const result = await askOpenAI(prompt, { reasoningEffort: "low", maxOutputTokens: 2200 });
+  const result = await askOpenAI(prompt, { reasoningEffort: "low", maxOutputTokens: 2200, ...(input.usageOwnerId ? { usage: { ownerId: input.usageOwnerId, operationId: `enrichment:application-pack:${crypto.randomUUID()}`, scope: "enrichment" } } : {}) });
   const model = parseModelObject(result.text);
   if (!model) return { ...fallback, generation: { provider: "fallback", model: configuredModel(), reasoningEffort: "low", warning: "The model response was not valid JSON; deterministic copy was retained." } };
 

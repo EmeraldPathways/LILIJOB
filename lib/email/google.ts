@@ -1,4 +1,4 @@
-import { buildRawMessage, type GmailEnvironment } from "./core";
+import { buildRawMessage, type GmailEnvironment, type GmailRawAttachment } from "./core";
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -87,6 +87,7 @@ export async function sendGmailMessage(input: {
   to: string;
   subject: string;
   body: string;
+  attachments?: GmailRawAttachment[];
 }): Promise<string | null> {
   let response: Response;
   try {
@@ -96,7 +97,7 @@ export async function sendGmailMessage(input: {
         authorization: `Bearer ${input.accessToken}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ raw: buildRawMessage(input.to, input.subject, input.body) }),
+      body: JSON.stringify({ raw: buildRawMessage(input.to, input.subject, input.body, input.attachments ?? []) }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch {

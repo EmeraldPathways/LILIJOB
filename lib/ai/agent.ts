@@ -59,7 +59,12 @@ async function defaultDependencies(): Promise<AgentDependencies & { freshSearch:
     discover: (ownerId, category) => runDiscovery(ownerId, category),
     refresh: (ownerId, scope) => refreshExisting(ownerId, scope),
     inspectRun: (ownerId, runId) => getRun(ownerId, runId),
-    freshSearch: (_ownerId, question) => provider.search({ purpose: "bespoke", query: `${question} County Dublin technology employers`, maxResults: 6 }),
+    freshSearch: (freshOwnerId, question) => provider.search({
+      purpose: "bespoke",
+      query: `${question} County Dublin technology employers`,
+      maxResults: 6,
+      usage: { ownerId: freshOwnerId, operationId: `search:${crypto.randomUUID()}`, scope: "search" },
+    }),
     exportRecords: (ownerId, filters) => listCompanies(ownerId, filters as Parameters<typeof listCompanies>[1]),
     saveFinding: async (ownerId, finding) => saveFindingToDatabase(ownerId, finding),
     persistConversation: async (ownerId, input, response) => persistConversation(ownerId, input, response),
@@ -120,7 +125,9 @@ export async function runResearchAgent(input: AgentInput, ownerId: string, overr
   const savedPrompt = buildSavedDataPrompt(ownerId, savedRecords);
   const freshPrompt = freshResults.map((result) => `${result.title}\n${result.url}\n${result.snippet}`).join("\n\n");
   const { askOpenAI } = await import("./client");
-  const modelResult = await askOpenAI(buildAgentPrompt(input.question, savedPrompt, freshPrompt));
+  const modelResult = await askOpenAI(buildAgentPrompt(input.question, savedPrompt, freshPrompt), {
+    usage: { ownerId, operationId: `assistant:${input.conversationId ?? crypto.randomUUID()}`, scope: "assistant" },
+  });
   const response: AgentResponse = { answer: modelResult.text, citations, savedFindingIds: [], freshResearchUsed };
   if (input.companyId) {
     for (const citation of freshCitations) {

@@ -58,4 +58,13 @@ describe("Gmail primitives", () => {
     expect(mime).toContain("Content-Transfer-Encoding: base64");
     expect(mime).not.toContain("\nThanks");
   });
+
+  it("builds a multipart message with bounded, encoded attachments", () => {
+    const raw = buildRawMessage("recruiter@acme.example", "CV", "Please review", [{ filename: "cv-é.pdf", mimeType: "application/pdf", bytes: new TextEncoder().encode("%PDF-test") }]);
+    const mime = Buffer.from(raw, "base64url").toString("utf8");
+    expect(mime).toContain("multipart/mixed");
+    expect(mime).toContain("filename*=UTF-8''cv-%C3%A9.pdf");
+    expect(mime).toContain("application/pdf");
+    expect(mime).toContain("JVBERi10ZXN0");
+  });
 });

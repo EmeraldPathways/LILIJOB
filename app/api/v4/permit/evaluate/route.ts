@@ -15,6 +15,7 @@ function parseRule(rule: { id: string; ruleSet: string; effectiveFrom: string; e
   try {
     const parsed = JSON.parse(rule.rulesJson) as Record<string, unknown>;
     const eligibleOccupations = Array.isArray(parsed.eligibleOccupations) ? parsed.eligibleOccupations.filter((value): value is string => typeof value === "string" && Boolean(value.trim())) : [];
+    const requiredConditions = Array.isArray(parsed.requiredConditions) ? parsed.requiredConditions.filter((value): value is string => typeof value === "string" && Boolean(value.trim())) : [];
     const rawProvenance = record(parsed.provenance) ? parsed.provenance : {};
     const provenance: PermitRuleProvenanceInput = {
       authority: typeof rawProvenance.authority === "string" ? rawProvenance.authority : null,
@@ -28,6 +29,7 @@ function parseRule(rule: { id: string; ruleSet: string; effectiveFrom: string; e
       effectiveTo: rule.effectiveTo,
       sourceUrl: rule.sourceUrl,
       eligibleOccupations,
+      requiredConditions,
       salaryThreshold: typeof parsed.salaryThreshold === "number" ? parsed.salaryThreshold : undefined,
       provenance,
     };
@@ -77,6 +79,8 @@ export async function POST(request: Request) {
     dublinEvidence: typeof body.dublinEvidence === "string" ? body.dublinEvidence as "office-address" | "specific-job" | "remote-from-Ireland" | "unspecific-Irish-presence" | "none" | "unknown" : "unknown",
     pastSponsorshipEvidence: typeof body.pastSponsorshipEvidence === "boolean" ? body.pastSponsorshipEvidence : null,
     currentSupportEvidence: typeof body.currentSupportEvidence === "boolean" ? body.currentSupportEvidence : null,
+    salaryPeriod: body.salaryPeriod === "year" || body.salaryPeriod === "month" || body.salaryPeriod === "week" || body.salaryPeriod === "day" || body.salaryPeriod === "hour" || body.salaryPeriod === "unknown" ? body.salaryPeriod : "year",
+    conditionEvidence: record(body.conditionEvidence) ? Object.fromEntries(Object.entries(body.conditionEvidence).filter(([, value]) => value === "met" || value === "not-met" || value === "unknown" || value === "requires-review")) as Record<string, "met" | "not-met" | "unknown" | "requires-review"> : undefined,
   } as const;
   const result = evaluatePermit(input, rules);
   const evaluationId = await savePermitEvaluation(user.userId, input, result);

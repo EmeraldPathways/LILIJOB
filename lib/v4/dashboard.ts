@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { getDb } from "../../db";
 import { applicationEvents, applications, companies, jobs } from "../../db/schema";
-import { agentRuns, agentSteps, companySignals, dailyActionItems, interviews, jobDiscoveryRuns, jobMatches, recruitmentContacts } from "../../db/schema-v4";
+import { agentRuns, agentSteps, companySignals, dailyActionItems, interviews, jobDiscoveryRuns, jobMatches, notificationEvents, providerUsageEvents, recruitmentContacts } from "../../db/schema-v4";
 import { createAgentStep, type AgentStep } from "./agent";
 import { isActionItemStatus } from "./crm";
 
@@ -13,7 +13,7 @@ export async function getDashboardSummary(ownerId: string) {
   const db = getDb();
   const now = dateNow();
   const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const [highFit, newJobs, publicContacts, followups, upcomingInterviews, responses, signals, errors, stageCounts] = await Promise.all([
+  const [highFit, newJobs, publicContacts, followups, upcomingInterviews, responses, signals, errors, openNotifications, stageCounts] = await Promise.all([
     db.select({ count: sql<number>`count(distinct ${jobMatches.jobId})` }).from(jobMatches).innerJoin(jobs, and(eq(jobs.ownerId, jobMatches.ownerId), eq(jobs.id, jobMatches.jobId))).where(and(eq(jobMatches.ownerId, ownerId), gte(jobMatches.score, 70), eq(jobMatches.dismissed, false), eq(jobs.status, "open"), eq(jobs.confidence, "high"))),
     db.select({ count: sql<number>`count(*)` }).from(jobs).where(and(eq(jobs.ownerId, ownerId), gte(jobs.createdAt, weekAgo), eq(jobs.status, "open"), eq(jobs.confidence, "high"))),
     db.select({ count: sql<number>`count(*)` }).from(recruitmentContacts).where(and(eq(recruitmentContacts.ownerId, ownerId), inArray(recruitmentContacts.contactType, ["recruitment-specific", "public-named-recruiter", "public-relevant-hiring-manager"]), eq(recruitmentContacts.doNotContact, false))),
@@ -22,11 +22,12 @@ export async function getDashboardSummary(ownerId: string) {
     db.select({ count: sql<number>`count(*)` }).from(applicationEvents).where(and(eq(applicationEvents.ownerId, ownerId), inArray(applicationEvents.type, ["reply-observed", "response"]))),
     db.select({ count: sql<number>`count(*)` }).from(companySignals).where(and(eq(companySignals.ownerId, ownerId), gte(companySignals.discoveredAt, weekAgo))),
     db.select({ count: sql<number>`count(*)` }).from(jobDiscoveryRuns).where(and(eq(jobDiscoveryRuns.ownerId, ownerId), inArray(jobDiscoveryRuns.status, ["failed", "partial"]))),
+    db.select({ count: sql<number>`count(*)` }).from(notificationEvents).where(and(eq(notificationEvents.ownerId, ownerId), eq(notificationEvents.state, "open"))),
     db.select({ stage: applications.stage, count: sql<number>`count(*)` }).from(applications).where(eq(applications.ownerId, ownerId)).groupBy(applications.stage),
   ]);
   return {
     generatedAt: now,
-    cards: { highFitLiveJobs: Number(highFit[0]?.count ?? 0), newlyVerifiedJobs: Number(newJobs[0]?.count ?? 0), publicRecruitmentContacts: Number(publicContacts[0]?.count ?? 0), followupsDue: Number(followups[0]?.count ?? 0), scheduledInterviews: Number(upcomingInterviews[0]?.count ?? 0), applicationResponses: Number(responses[0]?.count ?? 0), recentHiringSignals: Number(signals[0]?.count ?? 0) },
+    cards: { highFitLiveJobs: Number(highFit[0]?.count ?? 0), newlyVerifiedJobs: Number(newJobs[0]?.count ?? 0), publicRecruitmentContacts: Number(publicContacts[0]?.count ?? 0), followupsDue: Number(followups[0]?.count ?? 0), scheduledInterviews: Number(upcomingInterviews[0]?.count ?? 0), applicationResponses: Number(responses[0]?.count ?? 0), recentHiringSignals: Number(signals[0]?.count ?? 0), openNotifications: Number(openNotifications[0]?.count ?? 0) },
     dataQuality: { failedOrPartialJobRuns: Number(errors[0]?.count ?? 0) },
     funnel: Object.fromEntries(stageCounts.map((row) => [row.stage, Number(row.count)])),
   };
@@ -96,7 +97,13 @@ export async function getAgentRun(ownerId: string, runId: string) {
   const [run] = await getDb().select().from(agentRuns).where(and(eq(agentRuns.ownerId, ownerId), eq(agentRuns.id, runId))).limit(1);
   if (!run) return null;
   const steps = await getDb().select().from(agentSteps).where(and(eq(agentSteps.ownerId, ownerId), eq(agentSteps.runId, runId))).orderBy(asc(agentSteps.stepIndex));
-  return { run, steps: steps.map((step) => ({ ...step, estimatedCostCents: step.costCents, actualCostCents: null })) };
+  const usage = await getDb().select().from(providerUsageEvents).where(and(eq(providerUsageEvents.ownerId, ownerId), eq(providerUsageEvents.runId, runId)));
+  const measuredByStep = new Map<string, number>();
+  for (const event of usage) {
+    if (!event.stepId || event.measuredCostMinor === null) continue;
+    measuredByStep.set(event.stepId, (measuredByStep.get(event.stepId) ?? 0) + event.measuredCostMinor);
+  }
+  return { run, steps: steps.map((step) => ({ ...step, estimatedCostCents: step.costCents, actualCostCents: measuredByStep.get(step.id) ?? null })), providerUsage: usage.map((event) => ({ id: event.id, provider: event.provider, status: event.status, inputTokens: event.inputTokens, outputTokens: event.outputTokens, estimatedCostMinor: event.estimatedCostMinor, measuredCostMinor: event.measuredCostMinor, observedAt: event.observedAt })) };
 }
 
 export async function createAgentRun(ownerId: string, input: { request: string; scope?: unknown; authorisedTools?: string[]; budget?: unknown }) {

@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   let pack = buildApplicationPack(packInput);
   if (isAIConfigured() && body.useAI !== false) {
     try {
-      pack = await buildApplicationPackWithAI(packInput);
+      pack = await buildApplicationPackWithAI({ ...packInput, usageOwnerId: user.userId });
     } catch (error) {
       pack = {
         ...pack,

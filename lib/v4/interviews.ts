@@ -139,12 +139,17 @@ export function buildInterviewPack(input: {
   const sourceError = validateInterviewSource(input.jobSourceUrl, input.checkedAt);
   if (sourceError) throw new Error(sourceError);
   const sourceMeta = [input.jobSourceUrl, input.checkedAt ? `checked ${input.checkedAt}` : null].filter((value): value is string => Boolean(value));
+  const staleSource = input.checkedAt ? Date.parse(`${input.checkedAt}T00:00:00.000Z`) < Date.now() - 30 * 86_400_000 : false;
+  if (staleSource) sourceMeta.push("stale role source; refresh before relying on the brief");
   const brief = input.companyFacts.length
     ? `${input.companyName}: ${input.companyFacts.slice(0, 4).join(" ")}`
     : `${input.companyName} source detail is unavailable. Confirm the company's product, Dublin team, business model and recent developments before relying on this brief.`;
   const predictions = (input.requirements.length ? input.requirements : ["role scope", "stakeholder collaboration", "measurable outcomes"]).slice(0, 6).map((topic) => ({ topic, label: "prediction" as const, reason: `This topic is suggested by the published role information; it is not a claim about the interviewer's actual questions.` }));
   const starStories = input.approvedStories.slice(0, 5).map((story) => ({ evidenceId: story.id, statement: story.statement, metric: story.metric ?? null, matchedRequirement: input.requirements.find((requirement) => matches(requirement, story)) ?? null }));
-  const gaps = input.requirements.filter((requirement) => !starStories.some((story) => story.matchedRequirement === requirement));
+  const gaps = [
+    ...input.requirements.filter((requirement) => !starStories.some((story) => story.matchedRequirement === requirement)),
+    ...(staleSource ? ["Role source is older than 30 days; refresh it before the interview."] : []),
+  ];
   const role = input.roleTitle;
   return {
     brief,

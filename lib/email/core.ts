@@ -150,7 +150,13 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-export function buildRawMessage(to: string, subject: string, body: string): string {
+export type GmailRawAttachment = { filename: string; mimeType: string; bytes: Uint8Array };
+
+function wrappedBase64(bytes: Uint8Array): string {
+  return toBase64(bytes).match(/.{1,76}/g)?.join("\r\n") ?? "";
+}
+
+export function buildRawMessage(to: string, subject: string, body: string, attachments: GmailRawAttachment[] = []): string {
   const validTo = validEmail(to);
   if (!validTo) throw new Error("Recipient email is invalid.");
   if (!subject.trim() || subject.length > 200 || /[\r\n]/.test(subject)) {
@@ -159,15 +165,23 @@ export function buildRawMessage(to: string, subject: string, body: string): stri
   if (body.length > 20_000) throw new Error("Message body exceeds 20,000 characters.");
 
   const encodedSubject = toBase64(encoder.encode(subject));
-  const encodedBody = toBase64(encoder.encode(body)).match(/.{1,76}/g)?.join("\r\n") ?? "";
-  const mime = [
-    `To: ${validTo}`,
-    `Subject: =?UTF-8?B?${encodedSubject}?=`,
-    "MIME-Version: 1.0",
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: base64",
-    "",
-    encodedBody,
-  ].join("\r\n");
-  return base64Url(encoder.encode(mime));
+  if (attachments.length > 3) throw new Error("At most three attachments may be included.");
+  for (const attachment of attachments) {
+    if (!attachment.filename.trim() || attachment.filename.length > 180 || /[\r\n\u0000]/.test(attachment.filename)) throw new Error("Attachment filename is invalid.");
+    if (!/^[\w!#$&.+\-^]+\/[\w!#$&.+\-^]+$/.test(attachment.mimeType)) throw new Error("Attachment content type is invalid.");
+    if (attachment.bytes.byteLength > 10 * 1024 * 1024) throw new Error("Attachment is too large.");
+  }
+  const encodedBody = wrappedBase64(encoder.encode(body));
+  const mime: string[] = [`To: ${validTo}`, `Subject: =?UTF-8?B?${encodedSubject}?=`, "MIME-Version: 1.0"];
+  if (!attachments.length) {
+    mime.push("Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", encodedBody);
+  } else {
+    const boundary = `=_LILI_${randomToken(12)}`;
+    mime.push(`Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", encodedBody);
+    for (const attachment of attachments) {
+      mime.push(`--${boundary}`, `Content-Type: ${attachment.mimeType}`, "Content-Transfer-Encoding: base64", `Content-Disposition: attachment; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`, "", wrappedBase64(attachment.bytes));
+    }
+    mime.push(`--${boundary}--`, "");
+  }
+  return base64Url(encoder.encode(mime.join("\r\n")));
 }

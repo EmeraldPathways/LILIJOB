@@ -3,6 +3,8 @@ import { configuredEnrichmentReasoningEffort } from "../ai/client";
 import { classifySource } from "./source-policy";
 import { ResearchProviderError, type SearchProvider } from "./search-provider";
 import type { SearchRequest, SearchResult } from "./types";
+import { extractResponsesUsage } from "../v5/usage/ledger";
+import { estimateOpenAICostMinor, reserveProviderUsage, settleProviderUsage } from "../v5/usage/provider";
 
 type JsonRecord = Record<string, unknown>;
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -128,6 +130,22 @@ export class OpenAIWebSearchProvider implements SearchProvider {
       throw new ResearchProviderError("OPENAI_API_KEY is not configured for this private Site.", "configuration");
     }
 
+    const reservation = request.usage ? await reserveProviderUsage({ ...request.usage, scope: request.usage.scope ?? "enrichment" }) : null;
+    const settle = async (status: string, body: unknown = null) => {
+      if (!reservation || !request.usage) return;
+      const tokens = extractResponsesUsage(body);
+      await settleProviderUsage(request.usage, reservation, {
+        attemptId: `${request.usage.operationId}:${crypto.randomUUID()}`,
+        provider: this.name,
+        model: env.OPENAI_MODEL?.trim() || "gpt-5.6-luna",
+        status,
+        ...tokens,
+        searchUnits: 1,
+        estimatedCostMinor: estimateOpenAICostMinor(tokens.inputTokens, tokens.outputTokens),
+        measuredCostMinor: null,
+        priceVersion: "configurable-estimate-v1",
+      });
+    };
     let response: Response;
     try {
       response = await fetch("https://api.openai.com/v1/responses", {
@@ -144,14 +162,17 @@ export class OpenAIWebSearchProvider implements SearchProvider {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch (error) {
+      await settle("failed");
       const message = error instanceof Error ? error.message : "OpenAI request timed out";
       throw new ResearchProviderError(message, "timeout", true);
     }
 
     if (response.status === 429) {
+      await settle("rate-limited");
       throw new ResearchProviderError("OpenAI rate limit reached.", "rate-limit", true);
     }
     if (!response.ok) {
+      await settle("failed");
       throw new ResearchProviderError(`OpenAI research request failed (${response.status}).`, "provider", response.status >= 500);
     }
 
@@ -159,8 +180,16 @@ export class OpenAIWebSearchProvider implements SearchProvider {
     try {
       body = await response.json() as unknown;
     } catch {
+      await settle("malformed");
       throw new ResearchProviderError("OpenAI returned malformed research output.", "malformed");
     }
-    return parseOpenAIWebSearchResponse(body, request);
+    try {
+      const results = parseOpenAIWebSearchResponse(body, request);
+      await settle("completed", body);
+      return results;
+    } catch (error) {
+      await settle("malformed", body);
+      throw error;
+    }
   }
 }

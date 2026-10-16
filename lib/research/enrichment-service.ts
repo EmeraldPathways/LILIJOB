@@ -133,9 +133,12 @@ export async function enrichCompany(
     const requests = buildCompanySearchRequests(seed).slice(0, 1);
     const results: SearchResult[] = [];
     let failures = 0;
-    for (const request of requests) {
+    for (const [requestIndex, request] of requests.entries()) {
       try {
-        results.push(...(await retryWithBackoff(() => provider.search(request), { retries: 0 })));
+        results.push(...(await retryWithBackoff(() => provider.search({
+          ...request,
+          usage: { ownerId, operationId: `enrichment:${runId}:${companyId}:${requestIndex}`, scope: "enrichment", runId },
+        }), { retries: 0 })));
       } catch {
         failures += 1;
       }

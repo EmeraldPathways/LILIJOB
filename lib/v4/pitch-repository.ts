@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../db";
-import { sectorPitches } from "../../db/schema-v4";
+import { pitchUsages, sectorPitches } from "../../db/schema-v4";
 
 export async function saveSectorPitch(ownerId: string, input: { profileId?: string | null; sector: string; companyName: string; role: string; payload: unknown }) {
   const [last] = await getDb().select({ version: sectorPitches.version }).from(sectorPitches).where(and(eq(sectorPitches.ownerId, ownerId), eq(sectorPitches.sector, input.sector), eq(sectorPitches.companyName, input.companyName), eq(sectorPitches.role, input.role))).orderBy(desc(sectorPitches.version)).limit(1);
@@ -31,4 +31,14 @@ export async function saveSectorPitchRevision(ownerId: string, pitchId: string, 
     role: existing.role,
     payload,
   });
+}
+
+export async function recordPitchUsage(ownerId: string, pitchId: string, input: { variant: string; applicationId?: string | null; outreachDraftId?: string | null; outcome?: string | null }) {
+  const pitch = await getSectorPitch(ownerId, pitchId);
+  if (!pitch) return null;
+  const now = new Date().toISOString();
+  const id = `pitch_usage_${crypto.randomUUID()}`;
+  await getDb().insert(pitchUsages).values({ id, ownerId, pitchId, applicationId: input.applicationId ?? null, outreachDraftId: input.outreachDraftId ?? null, variant: input.variant.trim(), outcome: input.outcome?.trim() || null, recordedAt: now, createdAt: now, updatedAt: now });
+  const [usage] = await getDb().select().from(pitchUsages).where(and(eq(pitchUsages.ownerId, ownerId), eq(pitchUsages.id, id))).limit(1);
+  return usage ?? null;
 }

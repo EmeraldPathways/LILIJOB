@@ -19,6 +19,13 @@ declare namespace Cloudflare {
     V4_MIGRATION_TOKEN?: string;
     V4_MIGRATION_OWNER_ID?: string;
     V4_JOB_RADAR_SCHEDULE_TOKEN?: string;
+    V5_PROVIDER_BUDGET_MINOR?: string;
+    V5_ASSISTANT_BUDGET_MINOR?: string;
+    V5_ENRICHMENT_BUDGET_MINOR?: string;
+    V5_SEARCH_BUDGET_MINOR?: string;
+    V5_AGENT_BUDGET_MINOR?: string;
+    V5_OPENAI_INPUT_MINOR_PER_MILLION?: string;
+    V5_OPENAI_OUTPUT_MINOR_PER_MILLION?: string;
     V4_PERMIT_RULE_ADMIN_ID?: string;
     GOOGLE_CLIENT_ID?: string;
     GOOGLE_CLIENT_SECRET?: string;

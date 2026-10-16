@@ -1,7 +1,8 @@
-import { and, asc, desc, eq, gte, like, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gte, like, isNotNull, lt, or, sql } from "drizzle-orm";
 import { getDb } from "../../db";
-import { companies, jobs, sources } from "../../db/schema";
-import { jobDiscoveryRuns, jobSnapshots } from "../../db/schema-v4";
+import { companies, companyCategories, jobs, sources } from "../../db/schema";
+import { jobDiscoveryRuns, jobMatches, jobSnapshots } from "../../db/schema-v4";
+import { parsePublishedSalary } from "./salary";
 import type { DiscoveredJob, JobRadarResult } from "./job-radar";
 
 function now(): string {
@@ -25,16 +26,68 @@ async function contentHash(job: DiscoveredJob): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export type JobListFilters = { title?: string; location?: string; status?: string; salaryPresent?: boolean; newDays?: number };
+export type JobListFilters = {
+  title?: string;
+  titleFamily?: string;
+  location?: string;
+  locality?: string;
+  workModel?: string;
+  sector?: string;
+  status?: string;
+  salaryPresent?: boolean;
+  salaryMin?: number;
+  salaryMax?: number;
+  fitMin?: number;
+  profileId?: string;
+  newDays?: number;
+  limit?: number;
+  cursor?: string;
+};
 
-export async function listV4Jobs(ownerId: string, filters: JobListFilters = {}) {
+const TITLE_FAMILY_TERMS: Record<string, string[]> = {
+  product: ["product", "product manager", "product marketing"],
+  growth: ["growth", "marketing", "demand", "acquisition"],
+  ecommerce: ["e-commerce", "ecommerce", "commerce", "marketplace"],
+  ai: ["ai", "artificial intelligence", "machine learning", "ml"],
+  solutions: ["solutions", "consulting", "implementation", "customer success"],
+};
+
+function decodeCursor(value: string | undefined): { updatedAt: string; id: string } | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value)) as { updatedAt?: unknown; id?: unknown };
+    return typeof parsed.updatedAt === "string" && typeof parsed.id === "string" ? { updatedAt: parsed.updatedAt, id: parsed.id } : null;
+  } catch {
+    return null;
+  }
+}
+
+function encodeCursor(updatedAt: string, id: string): string {
+  return encodeURIComponent(JSON.stringify({ updatedAt, id }));
+}
+
+export async function listV4JobsPage(ownerId: string, filters: JobListFilters = {}) {
   const clauses = [eq(jobs.ownerId, ownerId)];
   if (filters.title?.trim()) clauses.push(like(jobs.title, `%${filters.title.trim().replaceAll("%", "\\%")}%`));
   if (filters.location?.trim()) clauses.push(like(jobs.location, `%${filters.location.trim().replaceAll("%", "\\%")}%`));
   if (filters.status?.trim()) clauses.push(eq(jobs.status, filters.status.trim()));
   if (filters.salaryPresent === true) clauses.push(isNotNull(jobs.salary));
   if (filters.newDays && Number.isFinite(filters.newDays) && filters.newDays > 0) clauses.push(gte(jobs.createdAt, new Date(Date.now() - filters.newDays * 86_400_000).toISOString()));
-  return getDb().select({
+  if (filters.locality?.trim()) clauses.push(like(jobs.location, `%${filters.locality.trim().replaceAll("%", "\\%")}%`));
+  if (filters.workModel?.trim()) clauses.push(exists(getDb().select({ id: jobSnapshots.id }).from(jobSnapshots).where(and(eq(jobSnapshots.ownerId, ownerId), eq(jobSnapshots.jobId, jobs.id), like(jobSnapshots.workModel, `%${filters.workModel.trim().replaceAll("%", "\\%")}%`)))));
+  if (filters.sector?.trim()) clauses.push(exists(getDb().select({ id: companyCategories.id }).from(companyCategories).where(and(eq(companyCategories.ownerId, ownerId), eq(companyCategories.companyId, jobs.companyId), eq(companyCategories.category, filters.sector.trim() as typeof companyCategories.$inferSelect.category)))));
+  const familyTerms = filters.titleFamily?.trim().toLowerCase() ? TITLE_FAMILY_TERMS[filters.titleFamily.trim().toLowerCase()] : undefined;
+  if (familyTerms?.length) clauses.push(or(...familyTerms.map((term) => like(jobs.title, `%${term.replaceAll("%", "\\%")}%`)))!);
+  if (filters.fitMin !== undefined && Number.isFinite(filters.fitMin)) {
+    const score = Math.max(0, Math.min(100, Math.floor(filters.fitMin)));
+    const matchClauses = [eq(jobMatches.ownerId, ownerId), eq(jobMatches.jobId, jobs.id), gte(jobMatches.score, score), eq(jobMatches.dismissed, false)];
+    if (filters.profileId?.trim()) matchClauses.push(eq(jobMatches.profileId, filters.profileId.trim()));
+    clauses.push(exists(getDb().select({ id: jobMatches.id }).from(jobMatches).where(and(...matchClauses))));
+  }
+  const cursor = decodeCursor(filters.cursor);
+  if (cursor) clauses.push(or(lt(jobs.updatedAt, cursor.updatedAt), and(eq(jobs.updatedAt, cursor.updatedAt), sql`${jobs.id} > ${cursor.id}`))!);
+  const limit = Math.max(1, Math.min(100, Math.floor(filters.limit ?? 50)));
+  const rows = await getDb().select({
     id: jobs.id,
     companyId: jobs.companyId,
     title: jobs.title,
@@ -47,7 +100,26 @@ export async function listV4Jobs(ownerId: string, filters: JobListFilters = {}) 
     sourceId: jobs.sourceId,
     confidence: jobs.confidence,
     updatedAt: jobs.updatedAt,
-  }).from(jobs).where(and(...clauses)).orderBy(desc(jobs.updatedAt), asc(jobs.title));
+    companyName: companies.name,
+  }).from(jobs).innerJoin(companies, and(eq(companies.ownerId, ownerId), eq(companies.id, jobs.companyId))).where(and(...clauses)).orderBy(desc(jobs.updatedAt), asc(jobs.id)).limit(limit + 1);
+  const hasNext = rows.length > limit;
+  const page = (hasNext ? rows.slice(0, limit) : rows).filter((row) => {
+    if (filters.salaryMin === undefined && filters.salaryMax === undefined) return true;
+    const parsed = parsePublishedSalary(row.salary, null);
+    if (!parsed || parsed.period !== "year") return false;
+    if (filters.salaryMin !== undefined && parsed.max < filters.salaryMin) return false;
+    if (filters.salaryMax !== undefined && parsed.min > filters.salaryMax) return false;
+    return true;
+  });
+  return {
+    jobs: page,
+    nextCursor: hasNext && rows.length ? encodeCursor(rows[rows.length - 1].updatedAt, rows[rows.length - 1].id) : null,
+  };
+}
+
+/** Backward-compatible list used by agent and dashboard callers that do not paginate. */
+export async function listV4Jobs(ownerId: string, filters: JobListFilters = {}) {
+  return (await listV4JobsPage(ownerId, { ...filters, limit: filters.limit ?? 100 })).jobs;
 }
 
 export async function getV4Job(ownerId: string, jobId: string) {

@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { companies } from "../../../db/schema";
 import { jobRadarSchedules } from "../../../db/schema-v4";
+import { createNotificationEvent, claimScheduledTaskRun, finishScheduledTaskRun, updateScheduledTaskCheckpoint } from "../../v5/scheduler";
 
 export type JobRadarCadence = "daily" | "weekly";
 export type JobRadarScheduleInput = { companyIds: string[]; cadence: JobRadarCadence; enabled: boolean };
@@ -157,10 +158,25 @@ export async function dispatchDueJobRadarSchedules(input: {
     if (!claimed.length) { result.skippedSchedules += 1; continue; }
     result.schedulesClaimed += 1;
 
+    const taskRun = await claimScheduledTaskRun({
+      ownerId: schedule.ownerId,
+      scheduleId: schedule.id,
+      dueSlot: scheduledNextRunAt,
+      scopeVersion: schedule.updatedAt,
+      now: runAt,
+    });
+    if (!taskRun.claimed && taskRun.run.status === "completed") {
+      result.skippedSchedules += 1;
+      await db.update(jobRadarSchedules).set({ leaseUntil: null, updatedAt: runAt }).where(and(eq(jobRadarSchedules.ownerId, schedule.ownerId), eq(jobRadarSchedules.id, schedule.id)));
+      continue;
+    }
+
     const companyIds = parseCompanyIds(schedule.companyIdsJson);
     if (!companyIds.length) {
       await db.update(jobRadarSchedules).set({ enabled: false, nextRunAt: null, cursorIndex: 0, lastRunAt: runAt, lastStatus: "partial", lastResultJson: JSON.stringify({ errors: ["No saved companies are selected."] }), leaseUntil: null, updatedAt: runAt })
         .where(and(eq(jobRadarSchedules.ownerId, schedule.ownerId), eq(jobRadarSchedules.id, schedule.id), eq(jobRadarSchedules.leaseUntil, leaseUntil)));
+      await finishScheduledTaskRun(schedule.ownerId, taskRun.run.id, { status: "partial", checkpoint: { processedCompanies: 0, errors: ["No saved companies are selected."] }, now: runAt });
+      await createNotificationEvent({ ownerId: schedule.ownerId, dedupKey: `job-radar:${schedule.id}:${scheduledNextRunAt}`, type: "job-radar-run", sourceEntityId: schedule.id, sourceVersion: schedule.updatedAt, severity: "warning", payload: { status: "partial", errors: ["No saved companies are selected."] }, dueAt: runAt });
       result.partialSchedules += 1;
       continue;
     }
@@ -200,6 +216,7 @@ export async function dispatchDueJobRadarSchedules(input: {
         lastResultJson: JSON.stringify(totals),
         updatedAt: runAt,
       }).where(and(eq(jobRadarSchedules.ownerId, schedule.ownerId), eq(jobRadarSchedules.id, schedule.id), eq(jobRadarSchedules.leaseUntil, leaseUntil)));
+      await updateScheduledTaskCheckpoint(schedule.ownerId, taskRun.run.id, { cursorIndex, totals }, runAt);
     }
 
     const [current] = await db.select({ leaseUntil: jobRadarSchedules.leaseUntil }).from(jobRadarSchedules).where(and(
@@ -217,6 +234,11 @@ export async function dispatchDueJobRadarSchedules(input: {
       leaseUntil: null,
       updatedAt: runAt,
     }).where(and(eq(jobRadarSchedules.ownerId, schedule.ownerId), eq(jobRadarSchedules.id, schedule.id), eq(jobRadarSchedules.leaseUntil, leaseUntil)));
+    if (isComplete) {
+      const taskStatus = partial ? "partial" : "completed";
+      await finishScheduledTaskRun(schedule.ownerId, taskRun.run.id, { status: taskStatus, checkpoint: { cursorIndex, totals }, now: runAt });
+      await createNotificationEvent({ ownerId: schedule.ownerId, dedupKey: `job-radar:${schedule.id}:${scheduledNextRunAt}`, type: "job-radar-run", sourceEntityId: schedule.id, sourceVersion: schedule.updatedAt, severity: partial ? "warning" : "info", payload: { status: taskStatus, ...totals }, dueAt: runAt });
+    }
     if (!isComplete) result.continuations += 1;
     else if (partial) result.partialSchedules += 1;
     else result.completedSchedules += 1;
